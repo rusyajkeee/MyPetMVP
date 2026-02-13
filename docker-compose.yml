@@ -1,0 +1,82 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: mypet
+      POSTGRES_PASSWORD: mypet
+      POSTGRES_DB: mypet
+    ports:
+      # Host port 5433 to avoid conflicts with local Postgres
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mypet"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "4000:4000"
+    environment:
+      PORT: 4000
+      DATABASE_URL: postgresql://mypet:mypet@postgres:5432/mypet?schema=public
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-change-me-in-production-refresh}
+      FRONTEND_URL: http://localhost:5173
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # MyPet – Pet owners app (green, mobile-first)
+  mypet:
+    build:
+      context: ./apps/mypet
+      dockerfile: Dockerfile
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+
+  # MyPetWork – Provider dashboard (blue, professional SaaS)
+  mypetwork:
+    build:
+      context: ./apps/mypetwork
+      dockerfile: Dockerfile
+    ports:
+      - "5174:80"
+    depends_on:
+      - backend
+
+  # MyPetAdmin – Admin panel (purple, desktop)
+  mypetadmin:
+    build:
+      context: ./apps/mypetadmin
+      dockerfile: Dockerfile
+    ports:
+      - "5175:80"
+    depends_on:
+      - backend
+
+  # Browse DB: docker compose --profile tools up prisma-studio
+  prisma-studio:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: npx prisma studio --port 5555 --browser none
+    environment:
+      DATABASE_URL: postgresql://mypet:mypet@postgres:5432/mypet?schema=public
+    ports:
+      - "5555:5555"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles:
+      - tools
+
+volumes:
+  postgres_data:

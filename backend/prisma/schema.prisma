@@ -1,0 +1,171 @@
+// MyPet - PostgreSQL schema (GDPR-ready: explicit consent, audit fields)
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  PROVIDER
+  ADMIN
+}
+
+enum BookingStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  PAID
+  COMPLETED
+  CANCELLED
+}
+
+enum ServiceCategory {
+  VETERINARY
+  GROOMING
+  BOARDING
+  WALKING
+  TRANSPORT
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  passwordHash  String    @map("password_hash")
+  firstName     String    @map("first_name")
+  lastName      String    @map("last_name")
+  phone         String?
+  role          Role      @default(USER)
+  tosAccepted   Boolean   @default(false) @map("tos_accepted")
+  tosAcceptedAt DateTime? @map("tos_accepted_at")
+  emailVerified Boolean   @default(false) @map("email_verified")
+  emailVerifiedAt DateTime? @map("email_verified_at")
+  blocked       Boolean   @default(false)
+  blockedAt     DateTime? @map("blocked_at")
+  blockedReason String?   @map("blocked_reason")
+  avatarUrl     String?   @map("avatar_url")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  provider      Provider?
+  bookings      Booking[]
+  reviews       Review[]
+  notifications Notification[]
+  pets          Pet[]
+
+  @@map("users")
+}
+
+model Pet {
+  id        String   @id @default(cuid())
+  name      String   @map("name")
+  breed     String?  @map("breed")
+  species   String?  @map("species")
+  gender    String?
+  age       String?  // e.g. "1y 9m"
+  weight    String?  // e.g. "7.5 kg"
+  height    String?  // e.g. "54 cm"
+  color     String?
+  imageUrl  String?  @map("image_url")
+  ownerId   String   @map("owner_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  owner    User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  bookings Booking[]
+
+  @@map("pets")
+}
+
+model Provider {
+  id            String   @id @default(cuid())
+  userId        String   @unique @map("user_id")
+  businessName  String?  @map("business_name")
+  description   String?  @db.Text
+  address       String?
+  latitude      Float?
+  longitude     Float?
+  verified      Boolean  @default(false)
+  verifiedAt    DateTime? @map("verified_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  services Service[]
+  bookings Booking[]
+
+  @@map("providers")
+}
+
+model Service {
+  id          String          @id @default(cuid())
+  providerId  String          @map("provider_id")
+  category    ServiceCategory
+  title       String
+  description String?         @db.Text
+  priceKzt    Int             @map("price_kzt") // price in KZT
+  durationMin Int?           @map("duration_min")
+  imageUrl    String?         @map("image_url")
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+
+  provider   Provider   @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  bookings   Booking[]
+
+  @@map("services")
+}
+
+model Booking {
+  id          String        @id @default(cuid())
+  userId      String        @map("user_id")
+  providerId  String        @map("provider_id")
+  serviceId   String        @map("service_id")
+  petId       String?       @map("pet_id")
+  status      BookingStatus @default(PENDING)
+  scheduledAt DateTime     @map("scheduled_at")
+  completedAt DateTime?    @map("completed_at")
+  notes       String?      @db.Text
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  service  Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  pet      Pet?    @relation(fields: [petId], references: [id], onDelete: SetNull)
+  review   Review?
+
+  @@map("bookings")
+}
+
+model Review {
+  id         String   @id @default(cuid())
+  bookingId  String   @unique @map("booking_id")
+  userId     String   @map("user_id")
+  providerId String   @map("provider_id")
+  rating     Int      // 1-5
+  comment    String?  @db.Text
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  booking  Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("reviews")
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  title     String
+  body      String   @db.Text
+  read      Boolean  @default(false) @map("read")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
