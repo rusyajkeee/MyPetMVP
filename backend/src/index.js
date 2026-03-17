@@ -78,9 +78,11 @@ app.get('/api/health', (req, res) => {
 app.use(notFound);
 app.use(errorHandler);
 
-app.listen(PORT, () => {
+const HOST = '0.0.0.0';
+app.listen(PORT, HOST, () => {
   logger.info('✓ MyPet API server is running', {
-    url: `http://localhost:${PORT}`,
+    local: `http://localhost:${PORT}`,
+    network: `http://0.0.0.0:${PORT}`,
     swagger: `http://localhost:${PORT}/api-docs`,
   });
 });
