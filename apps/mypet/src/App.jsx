@@ -11,10 +11,16 @@ import BookingForm from './pages/BookingForm';
 import UserDashboard from './pages/UserDashboard';
 import Profile from './pages/Profile';
 import AddPets from './pages/AddPets';
+import PetProfile from './pages/PetProfile';
+import MedicalCard from './pages/MedicalCard';
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
-  if (loading) return <div className="min-h-screen flex items-center justify-center bg-mypet-green"><div className="text-white text-xl">Loading...</div></div>;
+  if (loading) return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="w-10 h-10 border-4 border-mypet-green border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
   if (!user) return <Navigate to="/login" replace />;
   return children;
 }
@@ -32,6 +38,8 @@ export default function App() {
         <Route path="register" element={<Register />} />
         <Route path="profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
         <Route path="pets" element={<ProtectedRoute><AddPets /></ProtectedRoute>} />
+        <Route path="pets/:petId" element={<ProtectedRoute><PetProfile /></ProtectedRoute>} />
+        <Route path="pets/:petId/medical-card" element={<ProtectedRoute><MedicalCard /></ProtectedRoute>} />
         <Route path="bookings" element={<ProtectedRoute><UserDashboard /></ProtectedRoute>} />
       </Route>
       <Route path="/splash" element={<Splash />} />

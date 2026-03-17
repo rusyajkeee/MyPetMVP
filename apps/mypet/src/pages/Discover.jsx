@@ -1,44 +1,54 @@
 import { useState, useEffect } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useNavigate } from 'react-router-dom';
 import api from '../api/client';
 
 const CATEGORIES = [
-  { slug: 'VETERINARY', label: 'Veterinary' },
-  { slug: 'GROOMING', label: 'Grooming' },
-  { slug: 'BOARDING', label: 'Boarding' },
+  { slug: 'VETERINARY', label: 'Veterinary', emoji: '🩺', color: 'bg-blue-50' },
+  { slug: 'GROOMING', label: 'Grooming', emoji: '✂️', color: 'bg-pink-50' },
+  { slug: 'BOARDING', label: 'Boarding', emoji: '🏠', color: 'bg-amber-50' },
 ];
 
 function ProviderCard({ p }) {
   const name = p.user ? `${p.user.firstName} ${p.user.lastName}` : p.businessName || 'Provider';
-  const rating = 5.0;
-  const reviewCount = 100;
+  const avgRating = p.avgRating != null ? Number(p.avgRating).toFixed(1) : '5.0';
+  const reviewCount = p.reviewCount ?? 0;
+  const firstService = p.services?.[0];
 
   return (
     <Link
       to={`/provider/${p.id}`}
       className="block bg-white rounded-2xl p-4 shadow-sm hover:shadow-md transition mb-4"
     >
-      <div className="flex gap-4">
-        <div className="w-16 h-16 rounded-full bg-gray-200 flex-shrink-0 overflow-hidden">
+      <div className="flex gap-4 items-center">
+        <div className="w-16 h-16 rounded-2xl bg-gray-100 flex-shrink-0 overflow-hidden">
           {p.user?.avatarUrl ? (
             <img src={p.user.avatarUrl} alt="" className="w-full h-full object-cover" />
           ) : (
-            <div className="w-full h-full flex items-center justify-center text-2xl text-gray-400">👤</div>
+            <div className="w-full h-full flex items-center justify-center text-2xl">🩺</div>
           )}
         </div>
         <div className="flex-1 min-w-0">
-          <h3 className="font-semibold text-gray-900 truncate">{name}</h3>
-          {p.services?.[0] && (
-            <p className="text-sm text-gray-500 truncate">{p.services[0].title}</p>
+          <h3 className="font-bold text-gray-900 truncate">{name}</h3>
+          {firstService && (
+            <p className="text-sm text-gray-500 truncate">{firstService.title}</p>
           )}
-          <div className="flex items-center gap-2 mt-1">
-            <span className="text-yellow-500">★</span>
-            <span className="text-sm font-medium">{rating}</span>
-            <span className="text-sm text-gray-500">({reviewCount} reviews)</span>
+          <div className="flex items-center gap-2 mt-1 flex-wrap">
+            <div className="flex items-center gap-1">
+              <span className="text-yellow-400 text-sm">★</span>
+              <span className="text-sm font-semibold text-gray-800">{avgRating}</span>
+              <span className="text-xs text-gray-400">({reviewCount})</span>
+            </div>
+            {firstService?.priceKzt && (
+              <span className="text-xs text-mypet-green font-medium bg-green-50 px-2 py-0.5 rounded-full">
+                from {firstService.priceKzt.toLocaleString()} ₸
+              </span>
+            )}
           </div>
-          {p.address && <p className="text-sm text-gray-500 mt-0.5">{p.address}</p>}
-          <span className="inline-block mt-2 text-xs font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded">OPEN</span>
+          {p.address && (
+            <p className="text-xs text-gray-400 mt-0.5 truncate">📍 {p.address}</p>
+          )}
         </div>
+        <span className="text-xs font-semibold text-green-600 bg-green-50 px-2 py-1 rounded-full flex-shrink-0">OPEN</span>
       </div>
     </Link>
   );
@@ -46,6 +56,7 @@ function ProviderCard({ p }) {
 
 export default function Discover() {
   const { category: categoryParam } = useParams();
+  const navigate = useNavigate();
   const [category, setCategory] = useState(categoryParam || 'VETERINARY');
   const [providers, setProviders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -55,41 +66,74 @@ export default function Discover() {
   }, [categoryParam]);
 
   useEffect(() => {
+    setLoading(true);
     let cancelled = false;
-    api.get('/providers', { params: { category } }).then(({ data }) => {
-      if (!cancelled) setProviders(data);
-    }).catch(() => {
-      if (!cancelled) setProviders([]);
-    }).finally(() => {
-      if (!cancelled) setLoading(false);
-    });
+    api.get('/providers', { params: { category } })
+      .then(({ data }) => { if (!cancelled) setProviders(data); })
+      .catch(() => { if (!cancelled) setProviders([]); })
+      .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [category]);
 
+  function handleCategoryChange(slug) {
+    setCategory(slug);
+    navigate(`/discover/${slug}`, { replace: true });
+  }
+
+  const catInfo = CATEGORIES.find((c) => c.slug === category) || CATEGORIES[0];
+
   return (
-    <div className="max-w-lg mx-auto pb-6">
-      <header className="bg-mypet-green text-white px-6 py-6 rounded-b-3xl">
-        <h1 className="text-xl font-bold capitalize">{category.toLowerCase()}</h1>
-      </header>
-      <div className="px-6 py-4">
-        <div className="flex gap-2 overflow-x-auto pb-2">
+    <div className="max-w-lg mx-auto">
+      {/* Header */}
+      <div className="bg-mypet-green px-6 pt-10 pb-6 rounded-b-[2.5rem]">
+        <p className="text-green-200 text-sm font-medium mb-1">Hello there 👋</p>
+        <h1 className="text-white text-2xl font-bold leading-tight">How may we<br />help you?</h1>
+
+        {/* Category pills */}
+        <div className="flex gap-3 mt-5 overflow-x-auto pb-1 scrollbar-hide">
           {CATEGORIES.map((c) => (
             <button
               key={c.slug}
-              onClick={() => setCategory(c.slug)}
-              className={`flex-shrink-0 px-4 py-2 rounded-full font-medium transition ${
-                category === c.slug ? 'bg-mypet-green text-white' : 'bg-white text-gray-700 shadow'
+              onClick={() => handleCategoryChange(c.slug)}
+              className={`flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold transition ${
+                category === c.slug
+                  ? 'bg-white text-mypet-green shadow-lg'
+                  : 'bg-white/20 text-white'
               }`}
             >
-              {c.label}
+              <span>{c.emoji}</span>
+              <span>{c.label}</span>
             </button>
           ))}
         </div>
-        <h2 className="text-lg font-semibold mt-6 mb-3">Nearby {category.toLowerCase()}</h2>
+      </div>
+
+      <div className="px-5 py-5">
+        <h2 className="text-lg font-bold text-gray-900 mb-1">
+          Nearby {catInfo.label}
+        </h2>
+        <p className="text-sm text-gray-500 mb-4">Top-rated specialists near you</p>
+
         {loading ? (
-          <p className="text-gray-500">Loading...</p>
+          <div className="space-y-4">
+            {[1,2,3].map((i) => (
+              <div key={i} className="bg-white rounded-2xl p-4 shadow-sm animate-pulse">
+                <div className="flex gap-4">
+                  <div className="w-16 h-16 rounded-2xl bg-gray-200 flex-shrink-0" />
+                  <div className="flex-1 space-y-2 py-1">
+                    <div className="h-4 bg-gray-200 rounded w-3/4" />
+                    <div className="h-3 bg-gray-200 rounded w-1/2" />
+                    <div className="h-3 bg-gray-200 rounded w-1/3" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         ) : providers.length === 0 ? (
-          <p className="text-gray-500">No providers found. Try another category.</p>
+          <div className="text-center py-12">
+            <p className="text-4xl mb-3">{catInfo.emoji}</p>
+            <p className="text-gray-500">No providers found in this category.</p>
+          </div>
         ) : (
           providers.map((p) => <ProviderCard key={p.id} p={p} />)
         )}

@@ -74,8 +74,9 @@ model Pet {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  owner    User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  bookings Booking[]
+  owner       User           @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  bookings    Booking[]
+  medicalCard PetMedicalCard?
 
   @@map("pets")
 }
@@ -169,3 +170,20 @@ model Notification {
   @@map("notifications")
 }
 
+model PetMedicalCard {
+  id              String    @id @default(cuid())
+  petId           String    @unique @map("pet_id")
+  allergies       String?   @db.Text
+  chronicDiseases String?   @db.Text @map("chronic_diseases")
+  medications     String?   @db.Text
+  vaccinations    String?   @db.Text
+  pastIllnesses   String?   @db.Text @map("past_illnesses")
+  notes           String?   @db.Text
+  lastVetVisit    DateTime? @map("last_vet_visit")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  pet Pet @relation(fields: [petId], references: [id], onDelete: Cascade)
+
+  @@map("pet_medical_cards")
+}

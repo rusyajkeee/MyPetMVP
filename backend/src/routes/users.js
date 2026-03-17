@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
-import { authMiddleware, attachUser, requireRole } from '../middleware/auth.js';
+import { authMiddleware, attachUser } from '../middleware/auth.js';
 
 const router = Router();
 router.use(authMiddleware, attachUser);
@@ -13,12 +13,6 @@ const updateProfileSchema = z.object({
   avatarUrl: z.string().url().optional().nullable(),
 });
 
-/**
- * @openapi
- * /users/profile:
- *   get:
- *     summary: Get current user profile
- */
 router.get('/profile', async (req, res, next) => {
   try {
     const user = await prisma.user.findUnique({
@@ -36,12 +30,6 @@ router.get('/profile', async (req, res, next) => {
   }
 });
 
-/**
- * @openapi
- * /users/profile:
- *   patch:
- *     summary: Update profile
- */
 router.patch('/profile', async (req, res, next) => {
   try {
     const data = updateProfileSchema.parse(req.body);
@@ -57,12 +45,6 @@ router.patch('/profile', async (req, res, next) => {
   }
 });
 
-/**
- * @openapi
- * /users/bookings:
- *   get:
- *     summary: Current user's booking history
- */
 router.get('/bookings', async (req, res, next) => {
   try {
     const bookings = await prisma.booking.findMany({
@@ -71,6 +53,7 @@ router.get('/bookings', async (req, res, next) => {
         service: true,
         provider: { include: { user: { select: { firstName: true, lastName: true, avatarUrl: true } } } },
         pet: true,
+        review: true,
       },
       orderBy: { scheduledAt: 'desc' },
     });
@@ -80,15 +63,13 @@ router.get('/bookings', async (req, res, next) => {
   }
 });
 
-/**
- * @openapi
- * /users/pets:
- *   get:
- *     summary: Current user's pets
- */
 router.get('/pets', async (req, res, next) => {
   try {
-    const pets = await prisma.pet.findMany({ where: { ownerId: req.userId }, orderBy: { createdAt: 'desc' } });
+    const pets = await prisma.pet.findMany({
+      where: { ownerId: req.userId },
+      include: { medicalCard: { select: { id: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
     res.json(pets);
   } catch (e) {
     next(e);
@@ -107,12 +88,6 @@ const addPetSchema = z.object({
   imageUrl: z.string().url().optional(),
 });
 
-/**
- * @openapi
- * /users/pets:
- *   post:
- *     summary: Add pet
- */
 router.post('/pets', async (req, res, next) => {
   try {
     const data = addPetSchema.parse(req.body);
@@ -122,6 +97,71 @@ router.post('/pets', async (req, res, next) => {
     res.status(201).json(pet);
   } catch (e) {
     if (e.name === 'ZodError') return res.status(400).json({ error: e.errors?.[0]?.message });
+    next(e);
+  }
+});
+
+// ─── Pet Medical Card ────────────────────────────────────────────────────────
+
+const medicalCardSchema = z.object({
+  allergies: z.string().optional().nullable(),
+  chronicDiseases: z.string().optional().nullable(),
+  medications: z.string().optional().nullable(),
+  vaccinations: z.string().optional().nullable(),
+  pastIllnesses: z.string().optional().nullable(),
+  notes: z.string().optional().nullable(),
+  lastVetVisit: z.string().datetime({ offset: true }).optional().nullable(),
+});
+
+async function assertPetOwner(req, res) {
+  const pet = await prisma.pet.findUnique({ where: { id: req.params.petId } });
+  if (!pet) { res.status(404).json({ error: 'Pet not found' }); return null; }
+  if (pet.ownerId !== req.userId) { res.status(403).json({ error: 'Forbidden' }); return null; }
+  return pet;
+}
+
+router.get('/pets/:petId/medical-card', async (req, res, next) => {
+  try {
+    const pet = await assertPetOwner(req, res);
+    if (!pet) return;
+    const card = await prisma.petMedicalCard.findUnique({ where: { petId: req.params.petId } });
+    res.json(card || null);
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.put('/pets/:petId/medical-card', async (req, res, next) => {
+  try {
+    const pet = await assertPetOwner(req, res);
+    if (!pet) return;
+    const data = medicalCardSchema.parse(req.body);
+    const card = await prisma.petMedicalCard.upsert({
+      where: { petId: req.params.petId },
+      create: {
+        petId: req.params.petId,
+        ...data,
+        lastVetVisit: data.lastVetVisit ? new Date(data.lastVetVisit) : null,
+      },
+      update: {
+        ...data,
+        lastVetVisit: data.lastVetVisit ? new Date(data.lastVetVisit) : null,
+      },
+    });
+    res.json(card);
+  } catch (e) {
+    if (e.name === 'ZodError') return res.status(400).json({ error: e.errors?.[0]?.message });
+    next(e);
+  }
+});
+
+router.delete('/pets/:petId/medical-card', async (req, res, next) => {
+  try {
+    const pet = await assertPetOwner(req, res);
+    if (!pet) return;
+    await prisma.petMedicalCard.deleteMany({ where: { petId: req.params.petId } });
+    res.status(204).end();
+  } catch (e) {
     next(e);
   }
 });
