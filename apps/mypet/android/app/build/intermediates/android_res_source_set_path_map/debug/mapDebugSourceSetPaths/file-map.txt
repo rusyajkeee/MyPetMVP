@@ -1,0 +1,8 @@
+com.mypet.app-pngs-0 C:\Users\matve\MyPetMVP\apps\mypet\android\app\build\generated\res\pngs\debug
+com.mypet.app-resValues-1 C:\Users\matve\MyPetMVP\apps\mypet\android\app\build\generated\res\resValues\debug
+com.mypet.app-updated_navigation_xml-2 C:\Users\matve\MyPetMVP\apps\mypet\android\app\build\generated\updated_navigation_xml\debug
+com.mypet.app-packageDebugResources-3 C:\Users\matve\MyPetMVP\apps\mypet\android\app\build\intermediates\incremental\debug\packageDebugResources\merged.dir
+com.mypet.app-packageDebugResources-4 C:\Users\matve\MyPetMVP\apps\mypet\android\app\build\intermediates\incremental\debug\packageDebugResources\stripped.dir
+com.mypet.app-debug-5 C:\Users\matve\MyPetMVP\apps\mypet\android\app\build\intermediates\merged_res\debug\mergeDebugResources
+com.mypet.app-debug-6 C:\Users\matve\MyPetMVP\apps\mypet\android\app\src\debug\res
+com.mypet.app-main-7 C:\Users\matve\MyPetMVP\apps\mypet\android\app\src\main\res
