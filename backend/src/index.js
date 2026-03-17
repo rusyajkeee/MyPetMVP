@@ -4,7 +4,9 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 
+import logger from './lib/logger.js';
 import { errorHandler, notFound } from './middleware/errorHandler.js';
+import { requestLogger } from './middleware/logger.js';
 import authRoutes from './routes/auth.js';
 import userRoutes from './routes/users.js';
 import providerRoutes from './routes/providers.js';
@@ -18,18 +20,28 @@ import { setupSwagger } from './config/swagger.js';
 const app = express();
 const PORT = process.env.PORT || 4000;
 
+logger.info('Starting MyPet API server', { port: PORT, environment: process.env.NODE_ENV || 'development' });
+
 // Security & parsing
 app.use(helmet());
 const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:5173,http://localhost:5174,http://localhost:5175').split(',');
+logger.debug('Allowed origins configured', { origins: allowedOrigins });
+
 app.use(cors({
   origin(origin, cb) {
     // Allow requests with no origin (curl, server-to-server, same-origin proxied)
-    if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+    if (!origin || allowedOrigins.includes(origin)) {
+      logger.debug('CORS request allowed', { origin });
+      return cb(null, true);
+    }
+    logger.warn('CORS request blocked', { origin });
     cb(null, true); // In production, tighten this
   },
   credentials: true,
 }));
+
 app.use(express.json());
+app.use(requestLogger);
 
 // Rate limiting
 const limiter = rateLimit({
@@ -57,13 +69,18 @@ app.use('/api/notifications', notificationRoutes);
 setupSwagger(app);
 
 // Health
-app.get('/api/health', (req, res) => res.json({ ok: true, ts: new Date().toISOString() }));
+app.get('/api/health', (req, res) => {
+  logger.info('Health check requested');
+  res.json({ ok: true, ts: new Date().toISOString() });
+});
 
 // 404 & error handler
 app.use(notFound);
 app.use(errorHandler);
 
 app.listen(PORT, () => {
-  console.log(`MyPet API running on http://localhost:${PORT}`);
-  console.log(`Swagger: http://localhost:${PORT}/api-docs`);
+  logger.info('✓ MyPet API server is running', {
+    url: `http://localhost:${PORT}`,
+    swagger: `http://localhost:${PORT}/api-docs`,
+  });
 });
