@@ -3,6 +3,10 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
+import fs from 'fs';
+import https from 'https';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 import logger from './lib/logger.js';
 import { errorHandler, notFound } from './middleware/errorHandler.js';
@@ -17,14 +21,33 @@ import adminRoutes from './routes/admin.js';
 import notificationRoutes from './routes/notifications.js';
 import { setupSwagger } from './config/swagger.js';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const app = express();
 const PORT = process.env.PORT || 4000;
+const HOST = '0.0.0.0';
+const USE_HTTPS = process.env.USE_HTTPS !== 'false';
 
-logger.info('Starting MyPet API server', { port: PORT, environment: process.env.NODE_ENV || 'development' });
+logger.info('Starting MyPet API server', { 
+  port: PORT, 
+  environment: process.env.NODE_ENV || 'development',
+  https: USE_HTTPS,
+});
 
 // Security & parsing
-app.use(helmet());
-const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:5173,http://localhost:5174,http://localhost:5175').split(',');
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:', 'https:'],
+      connectSrc: ["'self'", 'https://localhost', 'http://192.168.1.6:*'],
+    },
+  },
+}));
+const allowedOrigins = (process.env.FRONTEND_URL || 'https://localhost,http://localhost:5173,http://localhost:5174,http://localhost:5175,http://192.168.1.6:*').split(',');
 logger.debug('Allowed origins configured', { origins: allowedOrigins });
 
 app.use(cors({
@@ -68,14 +91,43 @@ app.use('/api/notifications', notificationRoutes);
 // Swagger
 setupSwagger(app);
 
-// Health
-app.get('/api/health', (req, res) => {
-  logger.info('Health check requested');
-  res.json({ ok: true, ts: new Date().toISOString() });
-});
+// Start server
+const startServer = () => {
+  if (USE_HTTPS) {
+    const keyPath = path.join(__dirname, '../certs/key.pem');
+    const certPath = path.join(__dirname, '../certs/cert.pem');
 
-// 404 & error handler
-app.use(notFound);
+    if (!fs.existsSync(keyPath) || !fs.existsSync(certPath)) {
+      logger.error('SSL certificates not found in ./certs/');
+      logger.info('Generate certificates with: npm run cert:generate');
+      logger.warn('Or set USE_HTTPS=false to use HTTP for development');
+      process.exit(1);
+    }
+
+    const options = {
+      key: fs.readFileSync(keyPath),
+      cert: fs.readFileSync(certPath),
+    };
+
+    https.createServer(options, app).listen(PORT, HOST, () => {
+      logger.info('✓ MyPet API server is running (HTTPS)', {
+        url: `https://localhost:${PORT}`,
+        network: `https://192.168.1.6:${PORT}`,
+        swagger: `https://localhost:${PORT}/api-docs`,
+      });
+    });
+  } else {
+    app.listen(PORT, HOST, () => {
+      logger.warn('✓ MyPet API server is running (HTTP - insecure for development only)', {
+        url: `http://localhost:${PORT}`,
+        network: `http://192.168.1.6:${PORT}`,
+        swagger: `http://localhost:${PORT}/api-docs`,
+      });
+    });
+  }
+};
+
+startServer(pp.use(notFound);
 app.use(errorHandler);
 
 const HOST = '0.0.0.0';

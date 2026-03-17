@@ -1,0 +1,21 @@
+node_modules/
+.env
+.env.local
+dist/
+build/
+*.log
+.DS_Store
+.vscode/
+.idea/
+
+# SSL certificates (generate locally with: npm run cert:generate)
+certs/
+*.pem
+
+# Prisma
+.prisma/
+
+# IDE
+*.swp
+*.swo
+*~
