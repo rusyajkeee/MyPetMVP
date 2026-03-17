@@ -31,11 +31,24 @@ export function AuthProvider({ children }) {
   }, [loadUser]);
 
   const login = async (email, password) => {
-    const { data } = await api.post('/auth/login', { email, password });
-    localStorage.setItem('accessToken', data.accessToken);
-    localStorage.setItem('refreshToken', data.refreshToken);
-    setUser(data.user);
-    return data;
+    try {
+      console.log('Attempting login request to:', api.defaults.baseURL);
+      const { data } = await api.post('/auth/login', { email, password });
+      console.log('Login successful');
+      localStorage.setItem('accessToken', data.accessToken);
+      localStorage.setItem('refreshToken', data.refreshToken);
+      setUser(data.user);
+      return data;
+    } catch (err) {
+      console.error('Login request failed!');
+      console.dir(err);
+      if (err.message) {
+        alert('Network Error: ' + err.message + '\nURL: ' + api.defaults.baseURL);
+      } else {
+        alert('Unknown Error during login');
+      }
+      throw err;
+    }
   };
 
   const register = async (body) => {

@@ -1,5 +1,9 @@
 {
   "appId": "com.mypet.app",
   "appName": "MyPet",
-  "webDir": "dist"
+  "webDir": "dist",
+  "server": {
+    "cleartext": true,
+    "androidScheme": "http"
+  }
 }
