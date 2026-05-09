@@ -13,6 +13,7 @@ import Profile from './pages/Profile';
 import AddPets from './pages/AddPets';
 import PetProfile from './pages/PetProfile';
 import MedicalCard from './pages/MedicalCard';
+import NearbyMap from './pages/NearbyMap';
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -32,6 +33,7 @@ export default function App() {
         <Route index element={<Home />} />
         <Route path="discover" element={<Discover />} />
         <Route path="discover/:category" element={<Discover />} />
+        <Route path="nearby" element={<NearbyMap />} />
         <Route path="provider/:id" element={<ProviderProfile />} />
         <Route path="provider/:id/book" element={<ProtectedRoute><BookingForm /></ProtectedRoute>} />
         <Route path="login" element={<Login />} />

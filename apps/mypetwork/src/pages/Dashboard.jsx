@@ -34,7 +34,7 @@ export default function Dashboard() {
         (b) => b.status === 'PENDING'
       ).length;
       const totalRevenue = bookings
-        .filter((b) => b.status === 'COMPLETED' || b.status === 'PAID')
+        .filter((b) => b.status === 'COMPLETED')
         .reduce((sum, b) => sum + (b.service?.priceKzt || 0), 0);
 
       setStats({
@@ -60,8 +60,6 @@ export default function Dashboard() {
     PENDING: 'bg-amber-100 text-amber-700',
     ACCEPTED: 'bg-blue-100 text-blue-700',
     COMPLETED: 'bg-green-100 text-green-700',
-    PAID: 'bg-emerald-100 text-emerald-700',
-    REJECTED: 'bg-red-100 text-red-700',
     CANCELLED: 'bg-slate-100 text-slate-600',
   };
 

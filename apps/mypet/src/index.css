@@ -2,3 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 body { @apply bg-gray-50 text-gray-900 antialiased; }
+
+/* Map custom styles */
+.mypet-popup .leaflet-popup-content-wrapper {
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+}
+.mypet-popup .leaflet-popup-content {
+  margin: 12px 14px;
+}

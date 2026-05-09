@@ -1,6 +1,7 @@
-import { PrismaClient } from '@prisma/client';
+import prismaPkg from '@prisma/client';
 import bcrypt from 'bcrypt';
 
+const { PrismaClient } = prismaPkg;
 const prisma = new PrismaClient();
 
 async function main() {
@@ -59,9 +60,11 @@ async function main() {
       userId: vetUser.id,
       businessName: 'Petz & Vets',
       description: 'Experienced veterinarian. Bachelor of Veterinary Science. Book the appointment now!',
-      address: 'Almaty, 2.5 km',
-      latitude: 43.238,
+      address: 'Almaty, Panfilov st.',
+      latitude: 43.256,
       longitude: 76.945,
+      category: 'VETERINARY',
+      isVerified: true,
       verified: true,
       verifiedAt: new Date(),
     },
@@ -98,12 +101,20 @@ async function main() {
 
   const groomProvider = await prisma.provider.upsert({
     where: { userId: groomUser.id },
-    update: {},
+    update: {
+      address: 'Almaty, Abay Ave',
+      latitude: 43.242,
+      longitude: 76.920,
+    },
     create: {
       userId: groomUser.id,
       businessName: 'Comb and Collar',
       description: 'Professional grooming',
-      address: 'Almaty, 2 km',
+      address: 'Almaty, Abay Ave',
+      latitude: 43.242,
+      longitude: 76.920,
+      category: 'GROOMING',
+      isVerified: true,
       verified: true,
       verifiedAt: new Date(),
     },

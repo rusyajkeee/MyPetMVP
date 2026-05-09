@@ -8,6 +8,9 @@ export const registerSchema = z.object({
   phone: z.string().optional(),
   tosAccepted: z.literal(true, { errorMap: () => ({ message: 'You must accept Terms of Service and Privacy Policy' }) }),
   role: z.enum(['USER', 'PROVIDER']).optional().default('USER'),
+  businessName: z.string().optional(),
+  description: z.string().optional(),
+  address: z.string().optional(),
 });
 
 export const loginSchema = z.object({

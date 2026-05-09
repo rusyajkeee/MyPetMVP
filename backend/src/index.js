@@ -29,13 +29,15 @@ const PORT = process.env.PORT || 4000;
 const HOST = '0.0.0.0';
 const USE_HTTPS = process.env.USE_HTTPS !== 'false';
 
-logger.info('Starting MyPet API server', { 
-  port: PORT, 
+// Dockerized frontends reach the API through nginx, so trust the first proxy hop.
+app.set('trust proxy', 1);
+
+logger.info('Starting MyPet API server', {
+  port: PORT,
   environment: process.env.NODE_ENV || 'development',
   https: USE_HTTPS,
 });
 
-// Security & parsing
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -47,18 +49,23 @@ app.use(helmet({
     },
   },
 }));
-const allowedOrigins = (process.env.FRONTEND_URL || 'https://localhost,http://localhost:5173,http://localhost:5174,http://localhost:5175,http://192.168.1.6:*').split(',');
+
+const allowedOrigins = (
+  process.env.FRONTEND_URL ||
+  'https://localhost,http://localhost:5173,http://localhost:5174,http://localhost:5175,http://192.168.1.6:*'
+).split(',');
+
 logger.debug('Allowed origins configured', { origins: allowedOrigins });
 
 app.use(cors({
   origin(origin, cb) {
-    // Allow requests with no origin (curl, server-to-server, same-origin proxied)
     if (!origin || allowedOrigins.includes(origin)) {
       logger.debug('CORS request allowed', { origin });
       return cb(null, true);
     }
+
     logger.warn('CORS request blocked', { origin });
-    cb(null, true); // In production, tighten this
+    cb(null, true);
   },
   credentials: true,
 }));
@@ -66,19 +73,16 @@ app.use(cors({
 app.use(express.json());
 app.use(requestLogger);
 
-// Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
   message: { error: 'Too many requests, please try again later.' },
 });
-app.use('/api', limiter);
 
-// Auth rate limit (stricter)
+app.use('/api', limiter);
 app.use('/api/auth/login', rateLimit({ windowMs: 15 * 60 * 1000, max: 10 }));
 app.use('/api/auth/register', rateLimit({ windowMs: 60 * 60 * 1000, max: 5 }));
 
-// API routes
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/providers', providerRoutes);
@@ -88,11 +92,20 @@ app.use('/api/reviews', reviewRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/notifications', notificationRoutes);
 
-// Swagger
 setupSwagger(app);
 
-// Start server
-const startServer = () => {
+app.use(notFound);
+app.use(errorHandler);
+
+function logStartup(protocol) {
+  const baseUrl = `${protocol}://localhost:${PORT}`;
+  logger.info(`MyPet API server is running (${protocol.toUpperCase()})`, {
+    url: baseUrl,
+    swagger: `${baseUrl}/api-docs`,
+  });
+}
+
+function startServer() {
   if (USE_HTTPS) {
     const keyPath = path.join(__dirname, '../certs/key.pem');
     const certPath = path.join(__dirname, '../certs/cert.pem');
@@ -110,31 +123,15 @@ const startServer = () => {
     };
 
     https.createServer(options, app).listen(PORT, HOST, () => {
-      logger.info('✓ MyPet API server is running (HTTPS)', {
-        url: `https://localhost:${PORT}`,
-        network: `https://192.168.1.6:${PORT}`,
-        swagger: `https://localhost:${PORT}/api-docs`,
-      });
+      logStartup('https');
     });
-  } else {
-    app.listen(PORT, HOST, () => {
-      logger.warn('✓ MyPet API server is running (HTTP - insecure for development only)', {
-        url: `http://localhost:${PORT}`,
-        network: `http://192.168.1.6:${PORT}`,
-        swagger: `http://localhost:${PORT}/api-docs`,
-      });
-    });
+
+    return;
   }
-};
 
-startServer(pp.use(notFound);
-app.use(errorHandler);
-
-const HOST = '0.0.0.0';
-app.listen(PORT, HOST, () => {
-  logger.info('✓ MyPet API server is running', {
-    local: `http://localhost:${PORT}`,
-    network: `http://0.0.0.0:${PORT}`,
-    swagger: `http://localhost:${PORT}/api-docs`,
+  app.listen(PORT, HOST, () => {
+    logStartup('http');
   });
-});
+}
+
+startServer();

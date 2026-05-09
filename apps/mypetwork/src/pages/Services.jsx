@@ -118,9 +118,8 @@ export default function Services() {
   const statusColor = {
     PENDING: 'bg-amber-100 text-amber-700',
     ACCEPTED: 'bg-blue-100 text-blue-700',
+    IN_PROGRESS: 'bg-purple-100 text-purple-700',
     COMPLETED: 'bg-green-100 text-green-700',
-    PAID: 'bg-emerald-100 text-emerald-700',
-    REJECTED: 'bg-red-100 text-red-700',
     CANCELLED: 'bg-slate-100 text-slate-600',
   };
 
@@ -354,12 +353,17 @@ export default function Services() {
                                   {b.status === 'PENDING' && (
                                     <>
                                       <button onClick={() => updateBookingStatus(b.id, 'ACCEPTED')} className="text-xs text-work-primary font-medium hover:underline">Accept</button>
-                                      <button onClick={() => updateBookingStatus(b.id, 'REJECTED')} className="text-xs text-red-600 font-medium hover:underline">Reject</button>
+                                      <button onClick={() => updateBookingStatus(b.id, 'CANCELLED')} className="text-xs text-red-600 font-medium hover:underline">Cancel</button>
                                     </>
                                   )}
                                   {b.status === 'ACCEPTED' && (
                                     <>
-                                      <button onClick={() => updateBookingStatus(b.id, 'PAID')} className="text-xs text-work-primary font-medium hover:underline">Paid</button>
+                                      <button onClick={() => updateBookingStatus(b.id, 'IN_PROGRESS')} className="text-xs text-work-primary font-medium hover:underline">Start</button>
+                                      <button onClick={() => updateBookingStatus(b.id, 'CANCELLED')} className="text-xs text-red-600 font-medium hover:underline">Cancel</button>
+                                    </>
+                                  )}
+                                  {b.status === 'IN_PROGRESS' && (
+                                    <>
                                       <button onClick={() => updateBookingStatus(b.id, 'COMPLETED')} className="text-xs text-slate-600 font-medium hover:underline">Complete</button>
                                     </>
                                   )}

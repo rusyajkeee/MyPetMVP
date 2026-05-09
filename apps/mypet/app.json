@@ -1,0 +1,20 @@
+{
+  "expo": {
+    "name": "MyPet Concierge",
+    "slug": "mypet-concierge",
+    "scheme": "mypet",
+    "version": "2.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#0E1614",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "android": {
+      "package": "com.mypet.app"
+    },
+    "ios": {
+      "bundleIdentifier": "com.mypet.app"
+    }
+  }
+}

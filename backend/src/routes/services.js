@@ -5,6 +5,7 @@ import { authMiddleware, attachUser, requireRole } from '../middleware/auth.js';
 
 const router = Router();
 const categoryEnum = z.enum(['VETERINARY', 'GROOMING', 'BOARDING', 'WALKING', 'TRANSPORT']);
+const AUTO_VERIFY_PROVIDERS = process.env.AUTO_VERIFY_PROVIDERS === 'true';
 
 /**
  * @openapi
@@ -76,8 +77,17 @@ router.post('/', authMiddleware, attachUser, requireRole('PROVIDER', 'ADMIN'), a
     const provider = await prisma.provider.findUnique({ where: { userId: req.userId } });
     if (!provider) return res.status(403).json({ error: 'Provider profile required' });
     const data = createServiceSchema.parse(req.body);
+
+    const providerId = provider.id;
+    if (AUTO_VERIFY_PROVIDERS && !provider.verified) {
+      await prisma.provider.update({
+        where: { id: provider.id },
+        data: { verified: true, verifiedAt: provider.verifiedAt || new Date() },
+      });
+    }
+
     const service = await prisma.service.create({
-      data: { ...data, providerId: provider.id },
+      data: { ...data, providerId },
     });
     res.status(201).json(service);
   } catch (e) {

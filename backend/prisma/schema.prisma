@@ -17,10 +17,16 @@ enum Role {
 enum BookingStatus {
   PENDING
   ACCEPTED
-  REJECTED
-  PAID
+  IN_PROGRESS
   COMPLETED
   CANCELLED
+}
+
+enum ProviderCategory {
+  VETERINARY
+  GROOMING
+  BOARDING
+  TRAINING
 }
 
 enum ServiceCategory {
@@ -55,6 +61,7 @@ model User {
   reviews       Review[]
   notifications Notification[]
   pets          Pet[]
+  favoriteProviders FavoriteProvider[]
 
   @@map("users")
 }
@@ -89,6 +96,8 @@ model Provider {
   address       String?
   latitude      Float?
   longitude     Float?
+  category      ProviderCategory @default(VETERINARY)
+  isVerified    Boolean  @default(false) @map("is_verified")
   verified      Boolean  @default(false)
   verifiedAt    DateTime? @map("verified_at")
   createdAt     DateTime @default(now()) @map("created_at")
@@ -97,6 +106,8 @@ model Provider {
   user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   services Service[]
   bookings Booking[]
+  reviews  Review[]
+  favoritedBy FavoriteProvider[]
 
   @@map("providers")
 }
@@ -127,7 +138,10 @@ model Booking {
   petId       String?       @map("pet_id")
   status      BookingStatus @default(PENDING)
   scheduledAt DateTime     @map("scheduled_at")
+  acceptedAt  DateTime?    @map("accepted_at")
+  startedAt   DateTime?    @map("started_at")
   completedAt DateTime?    @map("completed_at")
+  cancelledAt DateTime?    @map("cancelled_at")
   notes       String?      @db.Text
   createdAt   DateTime    @default(now()) @map("created_at")
   updatedAt   DateTime    @updatedAt @map("updated_at")
@@ -153,6 +167,7 @@ model Review {
 
   booking  Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
 
   @@map("reviews")
 }
@@ -186,4 +201,17 @@ model PetMedicalCard {
   pet Pet @relation(fields: [petId], references: [id], onDelete: Cascade)
 
   @@map("pet_medical_cards")
+}
+
+model FavoriteProvider {
+  id         String   @id @default(cuid())
+  userId     String   @map("user_id")
+  providerId String   @map("provider_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, providerId])
+  @@map("favorite_providers")
 }

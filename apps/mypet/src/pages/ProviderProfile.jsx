@@ -1,11 +1,14 @@
 import { useState, useEffect } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import api from '../api/client';
+import { useAuth } from '../context/AuthContext';
 
 export default function ProviderProfile() {
+  const { user } = useAuth();
   const { id } = useParams();
   const [provider, setProvider] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [favorite, setFavorite] = useState(false);
 
   useEffect(() => {
     api.get(`/providers/${id}`)
@@ -13,6 +16,20 @@ export default function ProviderProfile() {
       .catch(() => setProvider(null))
       .finally(() => setLoading(false));
   }, [id]);
+
+  useEffect(() => {
+    if (!user) return;
+    api.get('/users/favorites/ids')
+      .then(({ data }) => setFavorite(Array.isArray(data) && data.includes(id)))
+      .catch(() => setFavorite(false));
+  }, [user, id]);
+
+  async function toggleFavorite() {
+    if (!user) return;
+    if (favorite) await api.delete(`/users/favorites/${id}`);
+    else await api.post('/users/favorites', { providerId: id });
+    setFavorite((current) => !current);
+  }
 
   if (loading) {
     return (
@@ -65,7 +82,24 @@ export default function ProviderProfile() {
           </div>
 
           <div className="p-5">
-            <h2 className="text-xl font-bold text-gray-900">{name}</h2>
+            <div className="flex items-start justify-between gap-3">
+              <h2 className="text-xl font-bold text-gray-900">{name}</h2>
+              {user && (
+                <button
+                  type="button"
+                  onClick={toggleFavorite}
+                  className={`h-9 w-9 rounded-full text-sm font-bold ${favorite ? 'bg-rose-100 text-rose-600' : 'bg-gray-100 text-gray-500'}`}
+                  title={favorite ? 'Remove from favorites' : 'Add to favorites'}
+                >
+                  ♥
+                </button>
+              )}
+            </div>
+            {(provider.isVerified || provider.verified) && (
+              <span className="inline-flex mt-1 rounded-full bg-emerald-100 px-2 py-1 text-[11px] font-semibold text-emerald-700">
+                Verified provider
+              </span>
+            )}
             {firstService && (
               <p className="text-mypet-green font-medium text-sm mt-0.5">{firstService.title}</p>
             )}

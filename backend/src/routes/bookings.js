@@ -4,7 +4,14 @@ import { prisma } from '../lib/prisma.js';
 import { authMiddleware, attachUser, requireRole } from '../middleware/auth.js';
 
 const router = Router();
-const statusEnum = z.enum(['PENDING', 'ACCEPTED', 'REJECTED', 'PAID', 'COMPLETED', 'CANCELLED']);
+const statusEnum = z.enum(['PENDING', 'ACCEPTED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED']);
+const allowedStatusTransitions = {
+  PENDING: ['ACCEPTED', 'CANCELLED'],
+  ACCEPTED: ['IN_PROGRESS', 'CANCELLED'],
+  IN_PROGRESS: ['COMPLETED', 'CANCELLED'],
+  COMPLETED: [],
+  CANCELLED: [],
+};
 
 const createBookingSchema = z.object({
   serviceId: z.string().min(1),
@@ -67,7 +74,7 @@ router.post('/', authMiddleware, attachUser, requireRole('USER', 'ADMIN'), async
  * @openapi
  * /bookings:
  *   get:
- *     summary: List bookings (user: own; provider: own provider bookings; admin: all)
+ *     summary: List bookings for the current user role
  */
 router.get('/', authMiddleware, attachUser, async (req, res, next) => {
   try {
@@ -128,32 +135,57 @@ router.get('/:id', authMiddleware, attachUser, async (req, res, next) => {
  * @openapi
  * /bookings/:id/status:
  *   patch:
- *     summary: Update booking status (provider or admin)
+ *     summary: Update booking status (provider, user for cancel, admin)
  */
-router.patch('/:id/status', authMiddleware, attachUser, requireRole('PROVIDER', 'ADMIN'), async (req, res, next) => {
+router.patch('/:id/status', authMiddleware, attachUser, async (req, res, next) => {
   try {
-    const { status } = req.body;
-    const parsed = statusEnum.parse(status);
-    const booking = await prisma.booking.findUnique({ where: { id: req.params.id }, include: { user: true } });
+    const parsed = statusEnum.parse(req.body?.status);
+    const booking = await prisma.booking.findUnique({ where: { id: req.params.id }, include: { user: true, provider: true } });
     if (!booking) return res.status(404).json({ error: 'Booking not found' });
-    const provider = await prisma.provider.findUnique({ where: { userId: req.userId } });
-    if (req.role === 'PROVIDER' && booking.providerId !== provider?.id) {
-      return res.status(403).json({ error: 'Not your booking' });
+
+    if (req.role === 'PROVIDER') {
+      const provider = await prisma.provider.findUnique({ where: { userId: req.userId } });
+      if (booking.providerId !== provider?.id) return res.status(403).json({ error: 'Not your booking' });
+    } else if (req.role === 'USER') {
+      if (booking.userId !== req.userId) return res.status(403).json({ error: 'Not your booking' });
+      if (parsed !== 'CANCELLED') return res.status(403).json({ error: 'Users can only cancel bookings' });
     }
-    const updateData = { status: parsed };
-    if (parsed === 'COMPLETED') updateData.completedAt = new Date();
+
+    if (req.role !== 'ADMIN' && !allowedStatusTransitions[booking.status]?.includes(parsed)) {
+      return res.status(400).json({ error: `Cannot transition from ${booking.status} to ${parsed}` });
+    }
+
+    const now = new Date();
+    const updateData = {
+      status: parsed,
+      acceptedAt: parsed === 'ACCEPTED' ? now : booking.acceptedAt,
+      startedAt: parsed === 'IN_PROGRESS' ? now : booking.startedAt,
+      completedAt: parsed === 'COMPLETED' ? now : booking.completedAt,
+      cancelledAt: parsed === 'CANCELLED' ? now : booking.cancelledAt,
+    };
     const updated = await prisma.booking.update({
       where: { id: req.params.id },
       data: updateData,
       include: { service: true, provider: { include: { user: true } }, user: true, pet: true },
     });
-    await prisma.notification.create({
-      data: {
-        userId: booking.userId,
-        title: 'Booking status updated',
-        body: `Your booking is now ${parsed}.`,
-      },
-    });
+    
+    if (req.userId !== booking.userId) {
+      await prisma.notification.create({
+        data: {
+          userId: booking.userId,
+          title: 'Booking status updated',
+          body: `Your booking is now ${parsed}.`,
+        },
+      });
+    } else {
+      await prisma.notification.create({
+        data: {
+          userId: booking.provider.userId,
+          title: 'Booking cancelled by user',
+          body: `Booking has been cancelled by the user.`,
+        },
+      });
+    }
     res.json(updated);
   } catch (e) {
     if (e.name === 'ZodError') return res.status(400).json({ error: 'Invalid status' });

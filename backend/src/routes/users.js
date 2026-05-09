@@ -155,6 +155,76 @@ router.put('/pets/:petId/medical-card', async (req, res, next) => {
   }
 });
 
+const favoriteSchema = z.object({
+  providerId: z.string().min(1),
+});
+
+router.get('/favorites', async (req, res, next) => {
+  try {
+    const favorites = await prisma.favoriteProvider.findMany({
+      where: { userId: req.userId },
+      include: {
+        provider: {
+          include: {
+            user: { select: { firstName: true, lastName: true, avatarUrl: true } },
+            services: { take: 3 },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json(favorites.map((item) => item.provider));
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.get('/favorites/ids', async (req, res, next) => {
+  try {
+    const favorites = await prisma.favoriteProvider.findMany({
+      where: { userId: req.userId },
+      select: { providerId: true },
+    });
+    res.json(favorites.map((item) => item.providerId));
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.post('/favorites', async (req, res, next) => {
+  try {
+    const { providerId } = favoriteSchema.parse(req.body);
+    const provider = await prisma.provider.findUnique({ where: { id: providerId }, select: { id: true } });
+    if (!provider) return res.status(404).json({ error: 'Provider not found' });
+
+    const favorite = await prisma.favoriteProvider.upsert({
+      where: {
+        userId_providerId: {
+          userId: req.userId,
+          providerId,
+        },
+      },
+      create: { userId: req.userId, providerId },
+      update: {},
+    });
+    res.status(201).json(favorite);
+  } catch (e) {
+    if (e.name === 'ZodError') return res.status(400).json({ error: e.errors?.[0]?.message });
+    next(e);
+  }
+});
+
+router.delete('/favorites/:providerId', async (req, res, next) => {
+  try {
+    await prisma.favoriteProvider.deleteMany({
+      where: { userId: req.userId, providerId: req.params.providerId },
+    });
+    res.status(204).end();
+  } catch (e) {
+    next(e);
+  }
+});
+
 router.delete('/pets/:petId/medical-card', async (req, res, next) => {
   try {
     const pet = await assertPetOwner(req, res);

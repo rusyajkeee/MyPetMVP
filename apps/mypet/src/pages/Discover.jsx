@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import api from '../api/client';
+import { useAuth } from '../context/AuthContext';
 
 const CATEGORIES = [
   { slug: 'VETERINARY', label: 'Veterinary', emoji: '🩺', color: 'bg-blue-50' },
@@ -8,7 +9,7 @@ const CATEGORIES = [
   { slug: 'BOARDING', label: 'Boarding', emoji: '🏠', color: 'bg-amber-50' },
 ];
 
-function ProviderCard({ p }) {
+function ProviderCard({ p, favorite, onToggleFavorite, canFavorite }) {
   const name = p.user ? `${p.user.firstName} ${p.user.lastName}` : p.businessName || 'Provider';
   const avgRating = p.avgRating != null ? Number(p.avgRating).toFixed(1) : '5.0';
   const reviewCount = p.reviewCount ?? 0;
@@ -48,18 +49,35 @@ function ProviderCard({ p }) {
             <p className="text-xs text-gray-400 mt-0.5 truncate">📍 {p.address}</p>
           )}
         </div>
-        <span className="text-xs font-semibold text-green-600 bg-green-50 px-2 py-1 rounded-full flex-shrink-0">OPEN</span>
+        <div className="flex items-center gap-2">
+          {canFavorite && (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.preventDefault();
+                onToggleFavorite?.(p.id, !favorite);
+              }}
+              className={`h-8 w-8 rounded-full text-sm font-bold ${favorite ? 'bg-rose-100 text-rose-600' : 'bg-gray-100 text-gray-500'}`}
+              title={favorite ? 'Remove from favorites' : 'Add to favorites'}
+            >
+              ♥
+            </button>
+          )}
+          <span className="text-xs font-semibold text-green-600 bg-green-50 px-2 py-1 rounded-full flex-shrink-0">OPEN</span>
+        </div>
       </div>
     </Link>
   );
 }
 
 export default function Discover() {
+  const { user } = useAuth();
   const { category: categoryParam } = useParams();
   const navigate = useNavigate();
   const [category, setCategory] = useState(categoryParam || 'VETERINARY');
   const [providers, setProviders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [favoriteIds, setFavoriteIds] = useState([]);
 
   useEffect(() => {
     if (categoryParam) setCategory(categoryParam);
@@ -74,6 +92,20 @@ export default function Discover() {
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [category]);
+
+  useEffect(() => {
+    if (!user) return;
+    api.get('/users/favorites/ids')
+      .then(({ data }) => setFavoriteIds(Array.isArray(data) ? data : []))
+      .catch(() => setFavoriteIds([]));
+  }, [user]);
+
+  async function handleFavorite(providerId, nextState) {
+    if (!user) return;
+    if (nextState) await api.post('/users/favorites', { providerId });
+    else await api.delete(`/users/favorites/${providerId}`);
+    setFavoriteIds((current) => nextState ? Array.from(new Set([...current, providerId])) : current.filter((id) => id !== providerId));
+  }
 
   function handleCategoryChange(slug) {
     setCategory(slug);
@@ -135,7 +167,15 @@ export default function Discover() {
             <p className="text-gray-500">No providers found in this category.</p>
           </div>
         ) : (
-          providers.map((p) => <ProviderCard key={p.id} p={p} />)
+          providers.map((p) => (
+            <ProviderCard
+              key={p.id}
+              p={p}
+              canFavorite={Boolean(user)}
+              favorite={favoriteIds.includes(p.id)}
+              onToggleFavorite={handleFavorite}
+            />
+          ))
         )}
       </div>
     </div>

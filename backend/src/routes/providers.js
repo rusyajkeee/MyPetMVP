@@ -6,12 +6,20 @@ import { authMiddleware, attachUser, requireRole } from '../middleware/auth.js';
 const router = Router();
 
 const serviceCategoryEnum = z.enum(['VETERINARY', 'GROOMING', 'BOARDING', 'WALKING', 'TRANSPORT']);
+const providerCategoryEnum = z.enum(['VETERINARY', 'GROOMING', 'BOARDING', 'TRAINING']);
+const nearbyQuerySchema = z.object({
+  lat: z.coerce.number().min(-90).max(90),
+  lng: z.coerce.number().min(-180).max(180),
+  radius: z.coerce.number().min(1).max(50).optional().default(5),
+  category: providerCategoryEnum.optional(),
+  topRated: z.coerce.boolean().optional().default(false),
+});
 
 /**
  * @openapi
  * /providers:
  *   get:
- *     summary: List providers (search by category, optional lat/lng)
+ *     summary: List providers (search by category)
  */
 router.get('/', async (req, res, next) => {
   try {
@@ -33,12 +41,87 @@ router.get('/', async (req, res, next) => {
   }
 });
 
+// Helper for distance calculation
+function haversine(lat1, lon1, lat2, lon2) {
+  const R = 6371; // Earth radius in km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = 
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
+/**
+ * @openapi
+ * /providers/nearby:
+ *   get:
+ *     summary: Search nearby providers within a radius
+ */
+router.get('/nearby', async (req, res, next) => {
+  try {
+    const query = nearbyQuerySchema.parse(req.query);
+    const where = {
+      latitude: { not: null },
+      longitude: { not: null },
+      OR: [{ verified: true }, { isVerified: true }],
+    };
+    if (query.category) where.category = query.category;
+
+    const providers = await prisma.provider.findMany({
+      where,
+      include: {
+        user: { select: { firstName: true, lastName: true, avatarUrl: true } },
+        services: { take: 5 },
+        reviews: { select: { rating: true } },
+      },
+    });
+
+    const nearbyProviders = providers
+      .map(p => {
+        const distanceKm = haversine(query.lat, query.lng, p.latitude, p.longitude);
+        const avgRating = p.reviews.length ? p.reviews.reduce((s, r) => s + r.rating, 0) / p.reviews.length : null;
+        return {
+          id: p.id,
+          businessName: p.businessName || (p.user.firstName + ' ' + p.user.lastName),
+          latitude: p.latitude,
+          longitude: p.longitude,
+          distanceKm: parseFloat(distanceKm.toFixed(2)),
+          category: p.category,
+          rating: avgRating ? parseFloat(avgRating.toFixed(1)) : null,
+          avgRating: avgRating ? parseFloat(avgRating.toFixed(1)) : null,
+          reviewCount: p.reviews.length,
+          address: p.address,
+          isVerified: p.isVerified || p.verified,
+          user: p.user,
+          services: p.services,
+        };
+      })
+      .filter(p => p.distanceKm <= query.radius)
+      .sort((a, b) => {
+        if (query.topRated) {
+          const ratingDiff = (b.rating ?? 0) - (a.rating ?? 0);
+          if (ratingDiff !== 0) return ratingDiff;
+        }
+        return a.distanceKm - b.distanceKm;
+      });
+
+    res.json(nearbyProviders);
+  } catch (e) {
+    if (e.name === 'ZodError') return res.status(400).json({ error: e.errors?.[0]?.message || 'Invalid nearby query' });
+    next(e);
+  }
+});
+
 const createProviderSchema = z.object({
   businessName: z.string().optional(),
   description: z.string().optional(),
   address: z.string().optional(),
   latitude: z.number().optional(),
   longitude: z.number().optional(),
+  category: providerCategoryEnum.optional(),
 });
 
 // Protected provider routes (must be before /:id so /me is not captured as id)

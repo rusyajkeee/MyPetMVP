@@ -3,7 +3,20 @@
   "appName": "MyPet",
   "webDir": "dist",
   "server": {
+    "url": "http://localhost:5173",
     "cleartext": true,
-    "androidScheme": "http"
+    "androidScheme": "http",
+    "allowNavigation": [
+      "localhost",
+      "127.0.0.1",
+      "192.168.1.6",
+      "*.192.168.1.6"
+    ]
+  },
+  "plugins": {
+    "WebView": {
+      "allowMixedContent": true,
+      "allowFileAccess": true
+    }
   }
 }
