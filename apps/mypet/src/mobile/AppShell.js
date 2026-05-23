@@ -1,8 +1,14 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState } from 'react';
-import { Animated, BackHandler, Keyboard, PanResponder, Pressable, StyleSheet, View } from 'react-native';
+import { Animated, BackHandler, Keyboard, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useAuth } from './context/AuthContext';
+import { useTheme } from './context/ThemeContext';
+import { useT } from './context/LocaleContext';
+import { fetchApiUnreadCount, pollProviderNotifications } from './lib/api';
+import { getUnreadCount } from './lib/notifications';
 import { palette, radius, shadows, spacing } from './theme';
 import { BottomTabs, LoadingState } from './ui';
 import {
@@ -15,65 +21,152 @@ import {
 import {
   BookingsScreen,
   MedicalCardScreen,
+  NotificationsScreen,
   PetDetailsScreen,
   PetsScreen,
   ProfileScreen,
 } from './screens/CareScreens';
+import {
+  ProviderDashboardScreen,
+  ProviderInboxScreen,
+  ProviderServicesScreen,
+  ProviderProfileScreen,
+} from './screens/ProviderScreens';
 import { LoginScreen, RegisterScreen, WelcomeScreen } from './screens/AuthScreens';
-
-const ROOT_TABS = [
-  { key: 'home', label: 'Home', icon: 'home-variant-outline' },
-  { key: 'discover', label: 'Discover', icon: 'magnify' },
-  { key: 'nearby', label: 'Nearby', icon: 'map-search-outline' },
-  { key: 'bookings', label: 'Bookings', icon: 'calendar-blank-outline' },
-  { key: 'pets', label: 'Pets', icon: 'paw-outline' },
-  { key: 'profile', label: 'Profile', icon: 'account-circle-outline' },
-];
+import { OnboardingScreen } from './screens/OnboardingScreen';
 
 function makeRoute(name, params = {}) {
   return { name, params };
 }
 
 export function AppShell() {
-  const { ready, user } = useAuth();
+  const { ready, user, mode } = useAuth();
+  const { dark, palette: p } = useTheme();
+  const t = useT();
+  const isProvider = user?.role === 'PROVIDER';
+
+  const USER_TABS = [
+    { key: 'home',          label: t('tab_home'),      icon: 'home-variant-outline' },
+    { key: 'discover',      label: t('tab_discover'),  icon: 'magnify' },
+    { key: 'bookings',      label: t('tab_bookings'),  icon: 'calendar-blank-outline' },
+    { key: 'pets',          label: t('tab_pets'),      icon: 'paw-outline' },
+    { key: 'notifications', label: t('tab_alerts'),    icon: 'bell-outline' },
+    { key: 'profile',       label: t('tab_profile'),   icon: 'account-circle-outline' },
+  ];
+
+  const PROVIDER_TABS = [
+    { key: 'providerDashboard', label: t('tab_dashboard'), icon: 'view-dashboard-outline' },
+    { key: 'providerInbox',     label: t('tab_inbox'),     icon: 'inbox-multiple-outline' },
+    { key: 'providerServices',  label: t('tab_services'),  icon: 'toolbox-outline' },
+    { key: 'notifications',     label: t('tab_alerts'),    icon: 'bell-outline' },
+    { key: 'providerProfile',   label: t('tab_profile'),   icon: 'account-circle-outline' },
+  ];
+
+  const rootTabKeys = new Set((isProvider ? PROVIDER_TABS : USER_TABS).map((t) => t.key));
+  const defaultRoot = isProvider ? 'providerDashboard' : 'home';
+
   const [stack, setStack] = useState([makeRoute('welcome')]);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [toast, setToast] = useState(null);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [onboardingChecked, setOnboardingChecked] = useState(false);
+
+  const toastAnim = useRef(new Animated.Value(-120)).current;
+  const seenNotifIds = useRef(null);
+  const toastTimerRef = useRef(null);
+
+  // Check if user has seen onboarding
+  useEffect(() => {
+    AsyncStorage.getItem('@mypet_onboarded')
+      .then((v) => {
+        setShowOnboarding(v !== 'yes');
+        setOnboardingChecked(true);
+      })
+      .catch(() => {
+        setShowOnboarding(false);
+        setOnboardingChecked(true);
+      });
+  }, []);
+
+  function handleOnboardingDone() {
+    AsyncStorage.setItem('@mypet_onboarded', 'yes').catch(() => {});
+    setShowOnboarding(false);
+  }
 
   useEffect(() => {
     if (!ready) return;
-
     setStack((currentStack) => {
       const currentRoute = currentStack[currentStack.length - 1];
       const authRoutes = new Set(['welcome', 'login', 'register']);
-
-      if (user && authRoutes.has(currentRoute?.name)) {
-        return [makeRoute('home')];
-      }
-
-      if (!user && !authRoutes.has(currentRoute?.name)) {
-        return [makeRoute('welcome')];
-      }
-
+      if (user && authRoutes.has(currentRoute?.name)) return [makeRoute(defaultRoot)];
+      if (!user && !authRoutes.has(currentRoute?.name)) return [makeRoute('welcome')];
       return currentStack;
     });
   }, [ready, user]);
 
   useEffect(() => {
-    const showSubscription = Keyboard.addListener('keyboardDidShow', () => {
-      setKeyboardVisible(true);
-    });
-    const hideSubscription = Keyboard.addListener('keyboardDidHide', () => {
-      setKeyboardVisible(false);
-    });
+    let active = true;
+    fetchApiUnreadCount(mode)
+      .then((n) => (n !== null ? n : getUnreadCount()))
+      .then((n) => { if (active) setUnreadCount(n); })
+      .catch(() => getUnreadCount().then((n) => { if (active) setUnreadCount(n); }).catch(() => {}));
+    return () => { active = false; };
+  }, [stack]);
 
-    return () => {
-      showSubscription.remove();
-      hideSubscription.remove();
-    };
+  useEffect(() => {
+    const showSub = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
+    return () => { showSub.remove(); hideSub.remove(); };
   }, []);
 
+  function showToast(title, body) {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToast({ title, body });
+    toastAnim.setValue(-120);
+    Animated.spring(toastAnim, { toValue: 0, useNativeDriver: true, bounciness: 6 }).start();
+    toastTimerRef.current = setTimeout(dismissToast, 5000);
+  }
+
+  function dismissToast() {
+    Animated.timing(toastAnim, { toValue: -120, duration: 220, useNativeDriver: true }).start(() => {
+      setToast(null);
+    });
+  }
+
+  useEffect(() => {
+    if (mode !== 'live' || !isProvider) return;
+    let active = true;
+    seenNotifIds.current = null;
+
+    async function poll() {
+      if (!active) return;
+      const unread = await pollProviderNotifications(mode);
+      if (!active || unread === null) return;
+      if (seenNotifIds.current === null) {
+        seenNotifIds.current = new Set(unread.map((n) => n.id));
+        return;
+      }
+      const newNotifs = unread.filter((n) => !seenNotifIds.current.has(n.id));
+      if (newNotifs.length > 0) {
+        const latest = newNotifs[0];
+        newNotifs.forEach((n) => seenNotifIds.current.add(n.id));
+        showToast(latest.title || 'New booking request', latest.body || '');
+        setUnreadCount((prev) => prev + newNotifs.length);
+      }
+    }
+
+    poll();
+    const interval = setInterval(poll, 8000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+      seenNotifIds.current = null;
+    };
+  }, [mode, isProvider]);
+
   function navigate(name, params = {}) {
-    setStack((currentStack) => [...currentStack, makeRoute(name, params)]);
+    setStack((s) => [...s, makeRoute(name, params)]);
   }
 
   function resetTo(name, params = {}) {
@@ -81,49 +174,73 @@ export function AppShell() {
   }
 
   function goBack() {
-    setStack((currentStack) => (currentStack.length > 1 ? currentStack.slice(0, -1) : currentStack));
+    setStack((s) => (s.length > 1 ? s.slice(0, -1) : s));
   }
 
   const route = stack[stack.length - 1];
   const canGoBack = stack.length > 1;
 
   useEffect(() => {
-    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (!canGoBack) {
-        return false;
-      }
-
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (!canGoBack) return false;
       goBack();
       return true;
     });
-
-    return () => {
-      subscription.remove();
-    };
+    return () => sub.remove();
   }, [canGoBack]);
 
-  if (!ready) {
-    return <LoadingState />;
+  if (!ready || !onboardingChecked) return <LoadingState />;
+
+  if (showOnboarding) {
+    return (
+      <>
+        <StatusBar style={dark ? 'light' : 'dark'} />
+        <OnboardingScreen onDone={handleOnboardingDone} />
+      </>
+    );
   }
 
-  const content = renderRoute(route, {
-    navigate,
-    resetTo,
-  });
+  const content = renderRoute(route, { navigate, resetTo });
+  const routeKey = `${route.name}:${route.params?.id || route.params?.providerId || ''}`;
 
-  const showTabs = user && ROOT_TABS.some((item) => item.key === route.name) && !keyboardVisible;
+  const tabs = isProvider ? PROVIDER_TABS : USER_TABS;
+  const tabsWithBadge = tabs.map((tab) =>
+    tab.key === 'notifications' ? { ...tab, badge: unreadCount } : tab
+  );
+  const showTabs = user && rootTabKeys.has(route.name) && !keyboardVisible;
 
   return (
-    <View style={styles.shell}>
+    <View style={[styles.shell, { backgroundColor: p.bg }]}>
+      <StatusBar style={dark ? 'light' : 'dark'} />
       <SwipeBackView enabled={canGoBack} onBack={goBack}>
-        {content}
+        <ScreenFadeIn routeKey={routeKey}>
+          {content}
+        </ScreenFadeIn>
       </SwipeBackView>
       {canGoBack ? (
-        <Pressable onPress={goBack} style={({ pressed }) => [styles.backButton, pressed ? styles.backButtonPressed : null]}>
-          <MaterialCommunityIcons name="chevron-left" size={22} color={palette.ink} />
+        <Pressable
+          onPress={goBack}
+          style={({ pressed }) => [
+            styles.backButton,
+            { backgroundColor: p.surface, borderColor: p.line },
+            pressed ? styles.backButtonPressed : null,
+          ]}
+        >
+          <MaterialCommunityIcons name="chevron-left" size={22} color={p.ink} />
         </Pressable>
       ) : null}
-      {showTabs ? <BottomTabs items={ROOT_TABS} current={route.name} onSelect={resetTo} /> : null}
+      {showTabs ? (
+        <BottomTabs items={tabsWithBadge} current={route.name} onSelect={resetTo} />
+      ) : null}
+
+      {toast ? (
+        <ToastPopup
+          title={toast.title}
+          body={toast.body}
+          anim={toastAnim}
+          onDismiss={dismissToast}
+        />
+      ) : null}
     </View>
   );
 }
@@ -134,97 +251,97 @@ function SwipeBackView({ children, enabled, onBack }) {
 
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponderCapture: (_, gestureState) => enabled && gestureState.x0 <= 28,
-      onMoveShouldSetPanResponderCapture: (_, gestureState) =>
-        enabled &&
-        gestureState.x0 <= 36 &&
-        gestureState.dx > 10 &&
-        Math.abs(gestureState.dx) > Math.abs(gestureState.dy),
-      onMoveShouldSetPanResponder: (_, gestureState) =>
-        enabled &&
-        gestureState.x0 <= 36 &&
-        gestureState.dx > 10 &&
-        Math.abs(gestureState.dx) > Math.abs(gestureState.dy),
-      onPanResponderMove: (_, gestureState) => {
-        translateX.setValue(Math.max(0, gestureState.dx));
-      },
-      onPanResponderRelease: (_, gestureState) => {
-        if (gestureState.dx > 84 || gestureState.vx > 0.9) {
-          Animated.timing(translateX, {
-            toValue: swipeWidth,
-            duration: 180,
-            useNativeDriver: true,
-          }).start(() => {
+      onStartShouldSetPanResponderCapture: (_, g) => enabled && g.x0 <= 28,
+      onMoveShouldSetPanResponderCapture: (_, g) =>
+        enabled && g.x0 <= 36 && g.dx > 10 && Math.abs(g.dx) > Math.abs(g.dy),
+      onMoveShouldSetPanResponder: (_, g) =>
+        enabled && g.x0 <= 36 && g.dx > 10 && Math.abs(g.dx) > Math.abs(g.dy),
+      onPanResponderMove: (_, g) => translateX.setValue(Math.max(0, g.dx)),
+      onPanResponderRelease: (_, g) => {
+        if (g.dx > 84 || g.vx > 0.9) {
+          Animated.timing(translateX, { toValue: swipeWidth, duration: 180, useNativeDriver: true }).start(() => {
             translateX.setValue(0);
             onBack();
           });
           return;
         }
-
-        Animated.spring(translateX, {
-          toValue: 0,
-          useNativeDriver: true,
-          bounciness: 0,
-        }).start();
+        Animated.spring(translateX, { toValue: 0, useNativeDriver: true, bounciness: 0 }).start();
       },
       onPanResponderTerminate: () => {
-        Animated.spring(translateX, {
-          toValue: 0,
-          useNativeDriver: true,
-          bounciness: 0,
-        }).start();
+        Animated.spring(translateX, { toValue: 0, useNativeDriver: true, bounciness: 0 }).start();
       },
     }),
   ).current;
 
-  if (!enabled) {
-    return children;
-  }
+  if (!enabled) return children;
 
   return (
-    <Animated.View
-      style={[
-        styles.swipeScreen,
-        {
-          transform: [{ translateX }],
-        },
-      ]}
-      {...panResponder.panHandlers}
-    >
+    <Animated.View style={[styles.swipeScreen, { transform: [{ translateX }] }]} {...panResponder.panHandlers}>
       {children}
+    </Animated.View>
+  );
+}
+
+function ScreenFadeIn({ routeKey, children }) {
+  const opacity = useRef(new Animated.Value(0)).current;
+  const slideY  = useRef(new Animated.Value(20)).current;
+
+  useEffect(() => {
+    opacity.setValue(0);
+    slideY.setValue(20);
+    Animated.parallel([
+      Animated.timing(opacity, { toValue: 1, duration: 210, useNativeDriver: true }),
+      Animated.spring(slideY, { toValue: 0, tension: 95, friction: 14, useNativeDriver: true }),
+    ]).start();
+  }, [routeKey]);
+
+  return (
+    <Animated.View style={{ flex: 1, opacity, transform: [{ translateY: slideY }] }}>
+      {children}
+    </Animated.View>
+  );
+}
+
+function ToastPopup({ title, body, anim, onDismiss }) {
+  return (
+    <Animated.View style={[toastStyles.container, { transform: [{ translateY: anim }] }]}>
+      <Pressable onPress={onDismiss} style={toastStyles.inner}>
+        <MaterialCommunityIcons name="bell-ring" size={20} color="#fff" />
+        <View style={toastStyles.copy}>
+          <Text style={toastStyles.title}>{title}</Text>
+          {body ? <Text style={toastStyles.body} numberOfLines={2}>{body}</Text> : null}
+        </View>
+        <MaterialCommunityIcons name="close" size={16} color="rgba(255,255,255,0.55)" />
+      </Pressable>
     </Animated.View>
   );
 }
 
 function renderRoute(route, nav) {
   switch (route.name) {
-    case 'login':
-      return <LoginScreen navigate={nav.navigate} />;
-    case 'register':
-      return <RegisterScreen navigate={nav.navigate} />;
-    case 'home':
-      return <HomeScreen navigate={nav.navigate} />;
-    case 'discover':
-      return <DiscoverScreen navigate={nav.navigate} route={route} />;
-    case 'provider':
-      return <ProviderScreen navigate={nav.navigate} route={route} />;
-    case 'nearby':
-      return <NearbyServicesScreen navigate={nav.navigate} route={route} />;
-    case 'booking':
-      return <BookingScreen navigate={nav.resetTo} route={route} />;
-    case 'bookings':
-      return <BookingsScreen navigate={nav.navigate} route={route} />;
-    case 'pets':
-      return <PetsScreen navigate={nav.navigate} route={route} />;
-    case 'petDetails':
-      return <PetDetailsScreen navigate={nav.navigate} route={route} />;
-    case 'medical':
-      return <MedicalCardScreen navigate={nav.navigate} route={route} />;
-    case 'profile':
-      return <ProfileScreen navigate={nav.navigate} route={route} />;
-    case 'welcome':
-    default:
-      return <WelcomeScreen navigate={nav.navigate} />;
+    case 'login':    return <LoginScreen    navigate={nav.navigate} />;
+    case 'register': return <RegisterScreen navigate={nav.navigate} />;
+    case 'welcome':  return <WelcomeScreen  navigate={nav.navigate} />;
+
+    case 'home':          return <HomeScreen     navigate={nav.navigate} />;
+    case 'discover':      return <DiscoverScreen  navigate={nav.navigate} route={route} />;
+    case 'nearby':        return <NearbyServicesScreen navigate={nav.navigate} route={route} />;
+    case 'bookings':      return <BookingsScreen  navigate={nav.navigate} route={route} />;
+    case 'pets':          return <PetsScreen      navigate={nav.navigate} route={route} />;
+    case 'profile':       return <ProfileScreen   navigate={nav.navigate} route={route} />;
+    case 'notifications': return <NotificationsScreen navigate={nav.navigate} route={route} />;
+
+    case 'provider':  return <ProviderScreen navigate={nav.navigate} route={route} />;
+    case 'booking':   return <BookingScreen  navigate={nav.resetTo}  route={route} />;
+    case 'petDetails':return <PetDetailsScreen navigate={nav.navigate} route={route} />;
+    case 'medical':   return <MedicalCardScreen navigate={nav.navigate} route={route} />;
+
+    case 'providerDashboard': return <ProviderDashboardScreen navigate={nav.navigate} />;
+    case 'providerInbox':     return <ProviderInboxScreen     navigate={nav.navigate} />;
+    case 'providerServices':  return <ProviderServicesScreen  navigate={nav.navigate} />;
+    case 'providerProfile':   return <ProviderProfileScreen   navigate={nav.navigate} />;
+
+    default: return <WelcomeScreen navigate={nav.navigate} />;
   }
 }
 
@@ -251,5 +368,41 @@ const styles = StyleSheet.create({
   },
   backButtonPressed: {
     opacity: 0.85,
+  },
+});
+
+const toastStyles = StyleSheet.create({
+  container: {
+    position: 'absolute',
+    top: 52,
+    left: 16,
+    right: 16,
+    borderRadius: 14,
+    backgroundColor: '#0f3d2e',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 10,
+    zIndex: 9999,
+  },
+  inner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 14,
+  },
+  copy: {
+    flex: 1,
+    gap: 2,
+  },
+  title: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  body: {
+    color: 'rgba(255,255,255,0.72)',
+    fontSize: 12,
   },
 });

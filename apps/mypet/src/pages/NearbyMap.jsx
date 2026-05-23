@@ -1,14 +1,9 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
-import MarkerClusterGroup from 'react-leaflet-cluster';
+import { useState, useEffect, useMemo } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, useMap, Circle } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import api from '../api/client';
-import MapProviderCard from '../components/MapProviderCard';
-import { useAuth } from '../context/AuthContext';
+import { PROVIDERS } from '../data/providers';
 
-// Fix for default marker icons in React Leaflet
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
@@ -16,136 +11,142 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
 });
 
-// Custom custom marker icon for providers
-const providerIcon = new L.Icon({
-  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
+function makeIcon(color) {
+  return new L.Icon({
+    iconUrl: `https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-${color}.png`,
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+    shadowSize: [41, 41],
+  });
+}
+
+const ICONS = {
+  VETERINARY: makeIcon('blue'),
+  GROOMING: makeIcon('green'),
+  BOARDING: makeIcon('orange'),
+  TRAINING: makeIcon('violet'),
+  SHELTER: makeIcon('red'),
+};
+
+const USER_ICON = new L.Icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-gold.png',
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
   iconSize: [25, 41],
   iconAnchor: [12, 41],
   popupAnchor: [1, -34],
-  shadowSize: [41, 41]
+  shadowSize: [41, 41],
 });
 
 const CATEGORIES = [
-  { slug: 'VETERINARY', label: 'Vet', emoji: '🩺' },
-  { slug: 'GROOMING', label: 'Grooming', emoji: '✂️' },
-  { slug: 'BOARDING', label: 'Boarding', emoji: '🏠' },
-  { slug: 'TRAINING', label: 'Training', emoji: '🦮'},
+  { slug: 'VETERINARY', label: 'Ветклиники', emoji: '🩺' },
+  { slug: 'GROOMING', label: 'Груминг', emoji: '✂️' },
+  { slug: 'BOARDING', label: 'Передержка', emoji: '🏠' },
+  { slug: 'TRAINING', label: 'Тренировки', emoji: '🦮' },
+  { slug: 'SHELTER', label: 'Приюты', emoji: '🐾' },
 ];
 
-const RADIUS_OPTIONS = [1, 3, 5, 10];
+const RADIUS_OPTIONS = [1, 2, 3, 5, 10];
+const ASTANA_CENTER = [51.18, 71.446];
+
+function haversine(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
 function ChangeView({ center }) {
   const map = useMap();
-  useEffect(() => {
-    map.setView(center, map.getZoom());
-  }, [center, map]);
+  useEffect(() => { map.setView(center, map.getZoom()); }, [center, map]);
   return null;
 }
 
+function Stars({ rating }) {
+  if (!rating) return <span className="text-xs text-gray-400">Нет оценки</span>;
+  return (
+    <span className="flex items-center gap-0.5 text-xs font-semibold text-gray-800">
+      <span className="text-yellow-400">★</span>
+      {Number(rating).toFixed(1)}
+    </span>
+  );
+}
+
 export default function NearbyMap() {
-  const { user } = useAuth();
-  const [providers, setProviders] = useState([]);
-  const [loading, setLoading] = useState(true);
-  
-  // Geolocation states
-  const [userLoc, setUserLoc] = useState([43.238, 76.945]); // default to Almaty
+  const [userLoc, setUserLoc] = useState(ASTANA_CENTER);
   const [locationLoaded, setLocationLoaded] = useState(false);
   const [locationError, setLocationError] = useState(null);
-  
-  // Filter states
   const [category, setCategory] = useState('VETERINARY');
-  const [radius, setRadius] = useState(10);
+  const [radius, setRadius] = useState(5);
   const [topRated, setTopRated] = useState(false);
-  const [favoriteIds, setFavoriteIds] = useState([]);
-  
-  const navigate = useNavigate();
+  const [selected, setSelected] = useState(null);
 
-  // Get User Location
   useEffect(() => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          setUserLoc([pos.coords.latitude, pos.coords.longitude]);
-          setLocationLoaded(true);
-        },
-        (err) => {
-          console.warn("Geolocation denied or failed.", err);
-          setLocationError("Could not access your location. Using default city center.");
-          setLocationLoaded(true); // Continue anyway with default
-        },
-        { timeout: 10000, maximumAge: 60000 }
-      );
-    } else {
-      setLocationError("Geolocation is not supported by your browser.");
+    if (!navigator.geolocation) {
+      setLocationError('Геолокация не поддерживается браузером. Показывается центр Астаны.');
       setLocationLoaded(true);
+      return;
     }
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        setUserLoc([pos.coords.latitude, pos.coords.longitude]);
+        setLocationLoaded(true);
+      },
+      () => {
+        setLocationError('Не удалось определить местоположение. Показывается центр Астаны.');
+        setLocationLoaded(true);
+      },
+      { timeout: 10000, maximumAge: 0, enableHighAccuracy: true }
+    );
   }, []);
 
-  // Fetch Providers
-  useEffect(() => {
-    if (!locationLoaded) return;
-    
-    setLoading(true);
-    api.get('/providers/nearby', { 
-      params: { 
-        lat: userLoc[0], 
-        lng: userLoc[1], 
-        radius, 
-        category 
-        ,
-        topRated
-      } 
-    })
-      .then(({ data }) => setProviders(data || []))
-      .catch((err) => console.error("Failed to fetch nearby:", err))
-      .finally(() => setLoading(false));
-  }, [locationLoaded, userLoc, radius, category, topRated]);
+  const filtered = useMemo(() => {
+    let list = PROVIDERS
+      .filter(p => p.categories.includes(category))
+      .map(p => ({ ...p, distanceKm: haversine(userLoc[0], userLoc[1], p.lat, p.lng) }))
+      .filter(p => p.distanceKm <= radius);
 
-  useEffect(() => {
-    if (!user) return;
-    api.get('/users/favorites/ids')
-      .then(({ data }) => setFavoriteIds(Array.isArray(data) ? data : []))
-      .catch(() => setFavoriteIds([]));
-  }, [user]);
+    if (topRated) list.sort((a, b) => (b.rating || 0) - (a.rating || 0));
+    else list.sort((a, b) => a.distanceKm - b.distanceKm);
 
-  async function toggleFavorite(providerId, nextState) {
-    if (!user) return;
-    if (nextState) await api.post('/users/favorites', { providerId });
-    else await api.delete(`/users/favorites/${providerId}`);
-    setFavoriteIds((current) => nextState ? Array.from(new Set([...current, providerId])) : current.filter((id) => id !== providerId));
-  }
+    return list;
+  }, [userLoc, category, radius, topRated]);
 
   if (!locationLoaded) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 flex-col gap-4 pb-20">
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4 pb-20 bg-gray-50">
         <div className="w-10 h-10 border-4 border-mypet-green border-t-transparent rounded-full animate-spin" />
-        <p className="text-gray-500 font-medium animate-pulse">Finding your location...</p>
+        <p className="text-gray-500 font-medium animate-pulse">Определение местоположения...</p>
       </div>
     );
   }
 
+  const catInfo = CATEGORIES.find(c => c.slug === category);
+
   return (
-    <div className="h-[calc(100vh-64px)] w-full relative bg-gray-100 flex flex-col">
-      {/* Filters Overlay */}
-      <div className="absolute top-0 left-0 right-0 z-[400] bg-white/90 backdrop-blur-md shadow-sm p-4 pt-6 max-w-lg mx-auto rounded-b-3xl">
-        <h1 className="text-lg font-bold text-gray-900 mb-3">Nearby Services</h1>
-        
+    <div className="h-[calc(100vh-64px)] w-full relative flex flex-col bg-gray-100">
+
+      {/* Filters overlay */}
+      <div className="absolute top-0 left-0 right-0 z-[400] bg-white/95 backdrop-blur-md shadow-sm px-4 pt-5 pb-3 max-w-lg mx-auto rounded-b-3xl">
+        <h1 className="text-lg font-bold text-gray-900 mb-3">Рядом с вами</h1>
+
         {locationError && (
-          <p className="text-xs text-amber-600 bg-amber-50 p-2 rounded-lg mb-3">
-            {locationError}
-          </p>
+          <p className="text-xs text-amber-600 bg-amber-50 px-3 py-2 rounded-xl mb-3">{locationError}</p>
         )}
 
-        <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide snap-x">
+        {/* Category tabs */}
+        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide snap-x">
           {CATEGORIES.map(c => (
             <button
               key={c.slug}
-              onClick={() => setCategory(c.slug)}
-              className={`flex-shrink-0 snap-center px-4 py-1.5 rounded-full text-sm font-semibold border transition-colors ${
-                category === c.slug 
-                  ? 'bg-mypet-green text-white border-mypet-green shadow-md' 
-                  : 'bg-white text-gray-600 border-gray-200'
+              onClick={() => { setCategory(c.slug); setSelected(null); }}
+              className={`flex-shrink-0 snap-center px-3 py-1.5 rounded-full text-sm font-semibold border transition-colors ${
+                category === c.slug
+                  ? 'bg-mypet-green text-white border-mypet-green shadow'
+                  : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
               }`}
             >
               {c.emoji} {c.label}
@@ -153,122 +154,204 @@ export default function NearbyMap() {
           ))}
         </div>
 
-        <div className="flex gap-2 items-center mt-1">
-          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Radius:</span>
+        {/* Radius + top-rated row */}
+        <div className="flex flex-wrap gap-2 items-center mt-2">
+          <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Радиус:</span>
           {RADIUS_OPTIONS.map(r => (
             <button
               key={r}
               onClick={() => setRadius(r)}
-              className={`px-3 py-1 text-xs rounded-full font-medium ${
-                radius === r 
-                  ? 'bg-gray-800 text-white' 
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              className={`px-2.5 py-0.5 text-xs rounded-full font-medium transition-colors ${
+                radius === r ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
             >
-              {r} km
+              {r} км
             </button>
           ))}
+          <label className="ml-auto flex items-center gap-1.5 text-xs font-medium text-gray-600 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={topRated}
+              onChange={e => setTopRated(e.target.checked)}
+              className="rounded border-gray-300 text-mypet-green focus:ring-mypet-green"
+            />
+            По рейтингу
+          </label>
         </div>
-        <label className="mt-2 flex items-center gap-2 text-xs font-medium text-gray-600">
-          <input
-            type="checkbox"
-            checked={topRated}
-            onChange={(event) => setTopRated(event.target.checked)}
-            className="rounded border-gray-300 text-mypet-green focus:ring-mypet-green"
-          />
-          Top rated first
-        </label>
+
+        {/* Results count */}
+        <p className="text-xs text-gray-400 mt-1.5">
+          {filtered.length === 0
+            ? `Нет ${catInfo?.label.toLowerCase()} в радиусе ${radius} км`
+            : `Найдено: ${filtered.length} ${catInfo?.label.toLowerCase()}`}
+        </p>
       </div>
 
-      {/* Map Container */}
-      <div className="flex-1 w-full h-full relative z-0">
-        <MapContainer 
-          center={userLoc} 
-          zoom={13} 
-          scrollWheelZoom={true} 
+      {/* Map */}
+      <div className="flex-1 w-full relative z-0">
+        <MapContainer
+          center={userLoc}
+          zoom={13}
+          scrollWheelZoom
           className="w-full h-full"
           zoomControl={false}
         >
           <ChangeView center={userLoc} />
           <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
-          
-          {/* User Location Marker */}
-          <Marker position={userLoc}>
+
+          {/* Radius circle */}
+          <Circle
+            center={userLoc}
+            radius={radius * 1000}
+            pathOptions={{ color: '#22c55e', fillColor: '#22c55e', fillOpacity: 0.05, weight: 1.5, dashArray: '6 4' }}
+          />
+
+          {/* User marker */}
+          <Marker position={userLoc} icon={USER_ICON}>
             <Popup>
-              <div className="text-center">
-                <span className="font-bold block text-mypet-green mb-1">Your Location</span>
-                <span className="text-xs text-gray-500 block">Radius set to {radius} km</span>
+              <div className="text-center text-sm">
+                <span className="font-bold text-mypet-green block">Вы здесь</span>
+                <span className="text-xs text-gray-500">Радиус: {radius} км</span>
               </div>
             </Popup>
           </Marker>
 
-          <MarkerClusterGroup chunkedLoading>
-            {providers.map(p => (
-              <Marker key={p.id} position={[p.latitude, p.longitude]} icon={providerIcon}>
-                <Popup className="mypet-popup">
-                  <div className="min-w-[150px]">
-                    <h3 className="font-bold text-gray-900 leading-tight mb-1">{p.businessName || `${p.user.firstName} ${p.user.lastName}`}</h3>
-                    <p className="text-xs text-gray-600 mb-2 truncate">{p.services[0]?.title || 'Service'}</p>
+          {/* Provider markers */}
+          {filtered.map(p => (
+            <Marker
+              key={p.id}
+              position={[p.lat, p.lng]}
+              icon={ICONS[p.categories[0]] || ICONS.VETERINARY}
+              eventHandlers={{ click: () => setSelected(p) }}
+            >
+              <Popup>
+                <div className="min-w-[200px] max-w-[240px]">
+                  <h3 className="font-bold text-gray-900 text-sm leading-snug">{p.name}</h3>
+                  {p.desc && <p className="text-xs text-gray-500 mb-1">{p.desc}</p>}
+                  <p className="text-xs text-gray-600 mb-2">📍 {p.address}</p>
 
-                    <div className="flex justify-between items-center mb-3 text-xs">
-                      <span className="font-medium text-mypet-green bg-green-50 px-1.5 py-0.5 rounded">
-                        {p.distanceKm} km
-                      </span>
-                      <span className="text-gray-500 font-medium">
-                        ★ {p.rating ? Number(p.rating).toFixed(1) : 'New'}
-                      </span>
-                    </div>
-                    {p.isVerified && <p className="mb-2 text-[11px] font-semibold text-emerald-600">Verified provider</p>}
-
-                    <div className="flex gap-2">
-                      {user && (
-                        <button
-                          onClick={() => toggleFavorite(p.id, !favoriteIds.includes(p.id))}
-                          className={`px-2.5 rounded-lg text-xs font-semibold ${favoriteIds.includes(p.id) ? 'bg-rose-100 text-rose-600' : 'bg-gray-100 text-gray-600'}`}
-                        >
-                          ♥
-                        </button>
-                      )}
-                      <button 
-                        onClick={() => navigate(`/provider/${p.id}`)}
-                        className="flex-1 bg-mypet-green text-white font-medium text-xs py-1.5 rounded-lg active:scale-95 transition-transform"
-                      >
-                        View Profile
-                      </button>
-                    </div>
+                  <div className="flex items-center justify-between mb-2 text-xs">
+                    <Stars rating={p.rating} />
+                    <span className="text-gray-400">({p.reviews} отз.)</span>
+                    <span className="font-semibold text-mypet-green bg-green-50 px-1.5 py-0.5 rounded">
+                      {p.distanceKm.toFixed(1)} км
+                    </span>
                   </div>
-                </Popup>
-              </Marker>
-            ))}
-          </MarkerClusterGroup>
+
+                  <div className="flex gap-2 flex-wrap">
+                    {p.whatsapp && (
+                      <a
+                        href={p.whatsapp}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex-1 bg-green-500 text-white text-xs font-medium py-1.5 rounded-lg text-center"
+                      >
+                        WhatsApp
+                      </a>
+                    )}
+                    {p.instagram && (
+                      <a
+                        href={p.instagram}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex-1 bg-pink-500 text-white text-xs font-medium py-1.5 rounded-lg text-center"
+                      >
+                        Instagram
+                      </a>
+                    )}
+                    {p.phone && !p.whatsapp && (
+                      <a
+                        href={`tel:+${p.phone}`}
+                        className="flex-1 bg-mypet-green text-white text-xs font-medium py-1.5 rounded-lg text-center"
+                      >
+                        Позвонить
+                      </a>
+                    )}
+                  </div>
+                </div>
+              </Popup>
+            </Marker>
+          ))}
         </MapContainer>
       </div>
 
-      {/* Horizontal List of Providers */}
-      <div className="absolute bottom-6 w-full z-[400] max-w-lg mx-auto left-0 right-0">
-        {loading ? (
-          <div className="w-full text-center text-sm font-medium bg-white/90 backdrop-blur mx-auto max-w-[200px] py-2 rounded-full shadow-lg text-mypet-green">
-            Searching nearby...
-          </div>
-        ) : providers.length === 0 ? (
-          <div className="w-full mx-4 mr-8 text-center text-sm bg-white/90 backdrop-blur p-4 rounded-2xl shadow-lg border border-gray-100">
-            <span className="block text-2xl mb-1">🔍</span>
-            <span className="font-semibold text-gray-800">No {category.toLowerCase()} providers nearby</span>
-            <p className="text-gray-500 text-xs mt-1">Try expanding your radius</p>
+      {/* Bottom cards */}
+      <div className="absolute bottom-4 w-full z-[400] left-0 right-0 max-w-lg mx-auto pointer-events-none">
+        {filtered.length === 0 ? (
+          <div className="mx-4 bg-white/95 backdrop-blur p-4 rounded-2xl shadow-lg border border-gray-100 text-center pointer-events-auto">
+            <span className="block text-2xl mb-1">{catInfo?.emoji}</span>
+            <span className="font-semibold text-gray-800 text-sm">Нет мест в радиусе {radius} км</span>
+            <p className="text-gray-400 text-xs mt-1">Попробуйте увеличить радиус поиска</p>
           </div>
         ) : (
-          <div className="flex overflow-x-auto px-4 pb-4 snap-x scrollbar-hide">
-             {providers.map(p => (
-               <MapProviderCard key={p.id} p={p} />
-             ))}
-             <div className="w-4 flex-shrink-0" />
+          <div className="flex overflow-x-auto px-4 gap-3 pb-1 snap-x scrollbar-hide pointer-events-auto">
+            {filtered.map(p => (
+              <ProviderCard key={p.id} p={p} active={selected?.id === p.id} />
+            ))}
+            <div className="w-2 flex-shrink-0" />
           </div>
         )}
       </div>
+    </div>
+  );
+}
 
+function ProviderCard({ p, active }) {
+  return (
+    <div
+      className={`flex-shrink-0 w-64 bg-white rounded-2xl p-3.5 shadow-md snap-center transition-all cursor-default ${
+        active ? 'ring-2 ring-mypet-green shadow-lg scale-[1.02]' : ''
+      }`}
+    >
+      <div className="flex items-start gap-3">
+        <div className="w-10 h-10 rounded-xl bg-gray-100 flex-shrink-0 flex items-center justify-center text-xl">
+          {CATEGORIES.find(c => c.slug === p.categories[0])?.emoji ?? '📍'}
+        </div>
+        <div className="flex-1 min-w-0">
+          <h3 className="font-bold text-gray-900 text-sm truncate">{p.name}</h3>
+          {p.desc && <p className="text-[11px] text-gray-400 truncate">{p.desc}</p>}
+          <div className="flex items-center gap-2 mt-1 flex-wrap">
+            <Stars rating={p.rating} />
+            <span className="text-[10px] text-gray-400">({p.reviews})</span>
+            <span className="text-[11px] font-semibold text-mypet-green bg-green-50 px-1.5 py-0.5 rounded ml-auto">
+              {p.distanceKm.toFixed(1)} км
+            </span>
+          </div>
+          <p className="text-[11px] text-gray-500 mt-1 truncate">📍 {p.address}</p>
+        </div>
+      </div>
+
+      <div className="flex gap-2 mt-3">
+        {p.whatsapp && (
+          <a
+            href={p.whatsapp}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex-1 bg-green-500 text-white text-xs font-semibold py-1.5 rounded-xl text-center"
+          >
+            WA
+          </a>
+        )}
+        {p.instagram && (
+          <a
+            href={p.instagram}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex-1 bg-gradient-to-r from-pink-500 to-purple-500 text-white text-xs font-semibold py-1.5 rounded-xl text-center"
+          >
+            IG
+          </a>
+        )}
+        <a
+          href={`tel:+${p.phone}`}
+          className="flex-1 bg-mypet-green text-white text-xs font-semibold py-1.5 rounded-xl text-center"
+        >
+          Позвонить
+        </a>
+      </div>
     </div>
   );
 }

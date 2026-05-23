@@ -1,9 +1,13 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Animated, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 
 import { useAuth } from '../context/AuthContext';
-import { addPet, getMedicalCard, getProfile, listBookings, listPets, saveMedicalCard, submitReview, updateBookingStatus } from '../lib/api';
+import { useTheme } from '../context/ThemeContext';
+import { useLocale, useT, LOCALES } from '../context/LocaleContext';
+import { hapticSuccess, hapticError } from '../lib/haptics';
+import { addPet, fetchApiNotifications, fetchApiUnreadCount, getMedicalCard, getProfile, listBookings, listPets, markApiNotificationsRead, saveMedicalCard, submitReview, updateBookingStatus } from '../lib/api';
+import { clearNotifications, listNotifications, markAllRead } from '../lib/notifications';
 import { formatDate, formatDateTime, initials, relativeLabel } from '../lib/format';
 import { formatAgeFromBirthDate, validateMedicalCardForm, validatePetForm, validateProfileForm } from '../lib/validation';
 import {
@@ -14,14 +18,18 @@ import {
   GlassCard,
   HeroTitle,
   Notice,
+  Pill,
   PrimaryButton,
   RatingStars,
   Screen,
   SectionTitle,
   SecondaryButton,
   StatusBadge,
+  ThemeToggle,
 } from '../ui';
-import { palette, radius, spacing, typography } from '../theme';
+import { lightPalette, radius, spacing, typography } from '../theme';
+
+const palette = lightPalette;
 
 const bookingStatuses = {
   PENDING: 'warning',
@@ -31,87 +39,176 @@ const bookingStatuses = {
   CANCELLED: 'neutral',
 };
 
-export function BookingsScreen() {
+const CANCEL_REASONS = [
+  'Found another provider',
+  'Schedule changed',
+  'Pet is unwell',
+  'Too expensive',
+  'Other',
+];
+
+// ─── Bookings ──────────────────────────────────────────────────────────────
+
+export function BookingsScreen({ navigate }) {
   const { mode } = useAuth();
+  const { palette: p } = useTheme();
+  const t = useT();
   const [bookings, setBookings] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const [tab, setTab] = useState('upcoming');
   const [composerId, setComposerId] = useState('');
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState('');
+  const [cancellingId, setCancellingId] = useState('');
+  const [cancelReason, setCancelReason] = useState('');
 
-  useEffect(() => {
-    let active = true;
+  async function loadBookings(isRefresh = false) {
+    if (isRefresh) setRefreshing(true);
+    else setLoading(true);
+    try {
+      const next = await listBookings(mode);
+      setBookings(next);
+      setError('');
+    } catch (err) {
+      setError(err.message || 'Unable to load bookings.');
+      hapticError();
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }
 
-    listBookings(mode)
-      .then((nextBookings) => {
-        if (!active) return;
-        setBookings(nextBookings);
-      })
-      .catch((currentError) => {
-        if (!active) return;
-        setError(currentError.message || 'Unable to load bookings.');
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [mode]);
+  useEffect(() => { loadBookings(); }, [mode]);
 
   async function handleReview(bookingId) {
     try {
-      await submitReview(mode, {
-        bookingId,
-        rating,
-        comment,
-      });
+      await submitReview(mode, { bookingId, rating, comment });
+      hapticSuccess();
       setComposerId('');
       setComment('');
       setRating(5);
-      const nextBookings = await listBookings(mode);
-      setBookings(nextBookings);
-    } catch (currentError) {
-      setError(currentError.message || 'Review failed.');
+      await loadBookings();
+    } catch (err) {
+      setError(err.message || 'Review failed.');
     }
   }
 
-  async function handleCancel(bookingId) {
+  async function handleCancelConfirm(bookingId) {
     try {
       await updateBookingStatus(mode, bookingId, 'CANCELLED');
-      const nextBookings = await listBookings(mode);
-      setBookings(nextBookings);
-    } catch (currentError) {
-      setError(currentError.message || 'Unable to cancel booking.');
+      hapticSuccess();
+      setCancellingId('');
+      setCancelReason('');
+      await loadBookings();
+    } catch (err) {
+      setError(err.message || 'Unable to cancel booking.');
+      hapticError();
     }
   }
 
+  const upcoming = bookings.filter((b) => ['PENDING', 'ACCEPTED', 'IN_PROGRESS'].includes(b.status));
+  const past = bookings.filter((b) => ['COMPLETED', 'CANCELLED'].includes(b.status));
+  const visible = tab === 'upcoming' ? upcoming : past;
+
   return (
-    <Screen>
-      <HeroTitle eyebrow="Bookings" title="Your bookings" subtitle="Upcoming and completed visits." />
+    <Screen refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => loadBookings(true)} />}>
+      <HeroTitle eyebrow={t('tab_bookings')} title={t('bookings_title')} subtitle={t('bookings_subtitle')} />
 
       {error ? <Notice tone="danger" icon="alert-circle" body={error} /> : null}
 
-      {bookings.length === 0 ? (
-        <EmptyState icon="calendar-blank-outline" title="No bookings" subtitle="Your visits will appear here." />
+      <View style={[styles.tabRow, { backgroundColor: p.surfaceMuted }]}>
+        <Pressable
+          onPress={() => setTab('upcoming')}
+          style={[styles.tabChip, tab === 'upcoming' && { backgroundColor: p.surface }]}
+        >
+          <Text style={[styles.tabChipText, { color: tab === 'upcoming' ? p.ink : p.inkSoft }]}>
+            {t('bookings_upcoming')} {upcoming.length > 0 ? `(${upcoming.length})` : ''}
+          </Text>
+        </Pressable>
+        <Pressable
+          onPress={() => setTab('past')}
+          style={[styles.tabChip, tab === 'past' && { backgroundColor: p.surface }]}
+        >
+          <Text style={[styles.tabChipText, { color: tab === 'past' ? p.ink : p.inkSoft }]}>
+            {t('bookings_history')} {past.length > 0 ? `(${past.length})` : ''}
+          </Text>
+        </Pressable>
+      </View>
+
+      {loading ? null : visible.length === 0 ? (
+        <EmptyState
+          icon="calendar-blank-outline"
+          title={tab === 'upcoming' ? t('bookings_no_upcoming') : t('bookings_no_history')}
+          subtitle={tab === 'upcoming' ? t('bookings_no_upcoming_sub') : t('bookings_no_history_sub')}
+          action={tab === 'upcoming' ? (
+            <PrimaryButton label={t('bookings_find_providers')} onPress={() => navigate('discover')} compact />
+          ) : null}
+        />
       ) : (
-        bookings.map((booking) => (
+        visible.map((booking) => (
           <GlassCard key={booking.id} style={styles.bookingCard}>
             <View style={styles.bookingTopRow}>
               <View style={styles.bookingCopy}>
-                <Text style={styles.bookingTitle}>{booking.service?.title || 'Booking'}</Text>
-                <Text style={styles.bookingMeta}>
-                  {booking.provider?.businessName || `${booking.provider?.user?.firstName || ''} ${booking.provider?.user?.lastName || ''}`.trim() || 'Provider'}
+                <Text style={[styles.bookingTitle, { color: p.ink }]}>{booking.service?.title || 'Booking'}</Text>
+                <Text style={[styles.bookingMeta, { color: p.inkSoft }]}>
+                  {booking.provider?.businessName ||
+                    `${booking.provider?.user?.firstName || ''} ${booking.provider?.user?.lastName || ''}`.trim() ||
+                    'Provider'}
                 </Text>
               </View>
               <StatusBadge label={relativeLabel(booking.status)} tone={bookingStatuses[booking.status]} />
             </View>
 
-            <Text style={styles.bookingMeta}>{formatDateTime(booking.scheduledAt)}</Text>
-            {booking.pet?.name ? <Text style={styles.bookingSubline}>Pet: {booking.pet.name}</Text> : null}
-            {booking.notes ? <Text style={styles.bookingNote}>{booking.notes}</Text> : null}
+            <Text style={[styles.bookingMeta, { color: p.inkSoft }]}>{formatDateTime(booking.scheduledAt)}</Text>
+            {booking.pet?.name ? (
+              <Text style={[styles.bookingSubline, { color: p.inkSoft }]}>
+                <Text style={[styles.bookingSublineLabel, { color: p.ink }]}>Pet: </Text>
+                {booking.pet.name}
+              </Text>
+            ) : null}
+            {booking.notes ? <Text style={[styles.bookingNote, { color: p.ink }]}>{booking.notes}</Text> : null}
             <BookingTimeline booking={booking} />
 
             {(booking.status === 'PENDING' || booking.status === 'ACCEPTED') ? (
-              <SecondaryButton label="Cancel booking" icon="close-circle-outline" onPress={() => handleCancel(booking.id)} compact />
+              cancellingId === booking.id ? (
+                <View style={[styles.cancelBlock, { borderTopColor: p.line }]}>
+                  <Text style={[styles.cancelTitle, { color: p.ink }]}>{t('bookings_cancel_reason')}</Text>
+                  <View style={styles.reasonRow}>
+                    {CANCEL_REASONS.map((r) => (
+                      <Pill
+                        key={r}
+                        label={r}
+                        active={cancelReason === r}
+                        onPress={() => setCancelReason(r)}
+                        style={styles.reasonPill}
+                      />
+                    ))}
+                  </View>
+                  <View style={styles.cancelActions}>
+                    <PrimaryButton
+                      label={t('bookings_confirm_cancel')}
+                      icon="close-circle-outline"
+                      onPress={() => handleCancelConfirm(booking.id)}
+                      compact
+                      style={styles.cancelConfirmBtn}
+                    />
+                    <SecondaryButton
+                      label={t('bookings_keep')}
+                      onPress={() => { setCancellingId(''); setCancelReason(''); }}
+                      style={styles.cancelKeepBtn}
+                    />
+                  </View>
+                </View>
+              ) : (
+                <SecondaryButton
+                  label={t('bookings_cancel')}
+                  icon="close-circle-outline"
+                  onPress={() => { setCancellingId(booking.id); setCancelReason(''); }}
+                  compact
+                />
+              )
             ) : null}
 
             {booking.status === 'COMPLETED' && !booking.review ? (
@@ -125,35 +222,29 @@ export function BookingsScreen() {
                           onPress={() => setRating(value)}
                           style={({ pressed }) => [
                             styles.ratingButton,
-                            rating >= value ? styles.ratingButtonActive : null,
+                            { borderColor: p.line, backgroundColor: rating >= value ? p.black : p.surfaceMuted },
                             pressed ? styles.pressed : null,
                           ]}
                         >
                           <MaterialCommunityIcons
                             name="star"
                             size={16}
-                            color={rating >= value ? palette.white : '#98A0A8'}
+                            color={rating >= value ? p.bg : p.inkSoft}
                           />
                         </Pressable>
                       ))}
                     </View>
-                    <Field
-                      label="Review"
-                      value={comment}
-                      onChangeText={setComment}
-                      placeholder="Optional"
-                      multiline
-                    />
-                    <PrimaryButton label="Send review" icon="check" onPress={() => handleReview(booking.id)} compact />
+                    <Field label="Review" value={comment} onChangeText={setComment} placeholder="Optional" multiline />
+                    <PrimaryButton label={t('bookings_send_review')} icon="check" onPress={() => handleReview(booking.id)} compact />
                   </View>
                 ) : (
-                  <SecondaryButton label="Leave review" icon="message-outline" onPress={() => setComposerId(booking.id)} />
+                  <SecondaryButton label={t('bookings_leave_review')} icon="message-outline" onPress={() => setComposerId(booking.id)} />
                 )}
               </View>
             ) : booking.review ? (
               <View style={styles.reviewSummary}>
                 <RatingStars rating={booking.review.rating} />
-                {booking.review.comment ? <Text style={styles.reviewText}>{booking.review.comment}</Text> : null}
+                {booking.review.comment ? <Text style={[styles.reviewText, { color: p.inkSoft }]}>{booking.review.comment}</Text> : null}
               </View>
             ) : null}
           </GlassCard>
@@ -163,7 +254,10 @@ export function BookingsScreen() {
   );
 }
 
+// ─── Booking Timeline (animated) ───────────────────────────────────────────
+
 function BookingTimeline({ booking }) {
+  const { palette: p } = useTheme();
   const steps = [
     { key: 'PENDING', label: 'Pending' },
     { key: 'ACCEPTED', label: 'Accepted' },
@@ -174,7 +268,7 @@ function BookingTimeline({ booking }) {
   const currentIndex = order.indexOf(booking.status);
 
   if (booking.status === 'CANCELLED') {
-    return <Text style={styles.timelineCancelled}>Cancelled</Text>;
+    return <Text style={[styles.timelineCancelled, { color: p.danger }]}>Cancelled</Text>;
   }
 
   return (
@@ -184,8 +278,10 @@ function BookingTimeline({ booking }) {
         const active = index === currentIndex;
         return (
           <View key={step.key} style={styles.timelineStep}>
-            <View style={[styles.timelineDot, done ? styles.timelineDotDone : null, active ? styles.timelineDotActive : null]} />
-            <Text style={[styles.timelineLabel, done ? styles.timelineLabelDone : null]}>{step.label}</Text>
+            <TimelineDot done={done} active={active} color={p.black} dimColor={p.line} />
+            <Text style={[styles.timelineLabel, done ? { color: p.ink, fontWeight: '600' } : { color: p.inkSoft }]}>
+              {step.label}
+            </Text>
           </View>
         );
       })}
@@ -193,151 +289,302 @@ function BookingTimeline({ booking }) {
   );
 }
 
-export function PetsScreen({ navigate }) {
-  const { mode } = useAuth();
-  const [pets, setPets] = useState([]);
-  const [error, setError] = useState('');
-  const [form, setForm] = useState({
-    name: '',
-    breed: '',
-    species: '',
-    gender: '',
-    birthDate: '',
-    age: '',
-    weight: '',
-    color: '',
-  });
+function TimelineDot({ done, active, color, dimColor }) {
+  const scale = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    let active = true;
+    if (!active) return;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(scale, { toValue: 1.35, duration: 700, useNativeDriver: true }),
+        Animated.timing(scale, { toValue: 1,    duration: 700, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [active]);
 
-    listPets(mode)
-      .then((nextPets) => {
-        if (!active) return;
-        setPets(nextPets);
-      })
-      .catch((currentError) => {
-        if (!active) return;
-        setError(currentError.message || 'Unable to load pets.');
-      });
+  return (
+    <Animated.View
+      style={[
+        styles.timelineDot,
+        { backgroundColor: done ? color : dimColor },
+        active && { width: 12, height: 12, borderRadius: 6, transform: [{ scale }] },
+      ]}
+    />
+  );
+}
 
-    return () => {
-      active = false;
-    };
-  }, [mode]);
+// ─── Notifications ─────────────────────────────────────────────────────────
 
-  function setField(key, value) {
-    setForm((current) => ({ ...current, [key]: value }));
+const NOTIF_ICONS = {
+  BOOKING_REQUESTED: 'calendar-plus',
+  BOOKING_ACCEPTED: 'calendar-check',
+  BOOKING_IN_PROGRESS: 'play-circle-outline',
+  BOOKING_COMPLETED: 'check-circle-outline',
+  BOOKING_CANCELLED: 'close-circle-outline',
+  PROVIDER_ACCEPTED: 'calendar-check',
+  PROVIDER_IN_PROGRESS: 'play-circle-outline',
+  PROVIDER_COMPLETED: 'check-circle-outline',
+  PROVIDER_CANCELLED: 'close-circle-outline',
+};
+
+const NOTIF_TONES = {
+  BOOKING_REQUESTED: '#2563eb',
+  BOOKING_ACCEPTED: palette.success,
+  BOOKING_COMPLETED: palette.success,
+  BOOKING_CANCELLED: palette.danger,
+  PROVIDER_ACCEPTED: palette.success,
+  PROVIDER_COMPLETED: palette.success,
+  PROVIDER_CANCELLED: palette.danger,
+};
+
+export function NotificationsScreen() {
+  const { mode } = useAuth();
+  const { palette: p } = useTheme();
+  const t = useT();
+  const [notifications, setNotifications] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  async function load(isRefresh = false) {
+    if (isRefresh) setRefreshing(true);
+    else setLoading(true);
+    const apiList = await fetchApiNotifications(mode);
+    if (apiList !== null) {
+      await markApiNotificationsRead(mode);
+      setNotifications(apiList);
+    } else {
+      const list = await listNotifications().catch(() => []);
+      await markAllRead().catch(() => {});
+      setNotifications(list);
+    }
+    setLoading(false);
+    setRefreshing(false);
   }
 
-  async function handleAddPet() {
-    const validationError = validatePetForm(form);
-    if (validationError) {
-      setError(validationError);
-      return;
-    }
+  useEffect(() => { load(); }, [mode]);
 
-    try {
-      const nextPet = await addPet(mode, {
-        ...form,
-        age: form.birthDate ? formatAgeFromBirthDate(form.birthDate) : form.age,
-      });
-      setPets((current) => [nextPet, ...current]);
-      setForm({
-        name: '',
-        breed: '',
-        species: '',
-        gender: '',
-        birthDate: '',
-        age: '',
-        weight: '',
-        color: '',
-      });
-    } catch (currentError) {
-      setError(currentError.message || 'Unable to add pet.');
+  async function handleClear() {
+    if (mode === 'live') {
+      await markApiNotificationsRead(mode);
+      setNotifications([]);
+    } else {
+      await clearNotifications().catch(() => {});
+      setNotifications([]);
     }
   }
 
   return (
-    <Screen>
-      <HeroTitle eyebrow="Pets" title="Your pets" subtitle="Profiles and health cards." />
+    <Screen refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} />}>
+      <HeroTitle
+        eyebrow={t('tab_alerts')}
+        title={t('notif_title')}
+        subtitle={t('notif_subtitle')}
+        action={
+          notifications.length > 0 ? (
+            <Pressable onPress={handleClear} style={styles.clearBtn}>
+              <Text style={[styles.clearBtnText, { color: p.danger }]}>{t('notif_clear')}</Text>
+            </Pressable>
+          ) : null
+        }
+      />
+
+      {!loading && notifications.length === 0 ? (
+        <EmptyState icon="bell-outline" title={t('notif_empty')} subtitle={t('notif_empty_sub')} />
+      ) : (
+        notifications.map((n, idx) => {
+          const color = NOTIF_TONES[n.type] || p.inkSoft;
+          const icon  = NOTIF_ICONS[n.type] || 'bell-outline';
+          const isUnread = !n.readAt;
+          return (
+            <NotifCard key={n.id} n={n} color={color} icon={icon} isUnread={isUnread} idx={idx} />
+          );
+        })
+      )}
+    </Screen>
+  );
+}
+
+function NotifCard({ n, color, icon, isUnread, idx }) {
+  const { palette: p } = useTheme();
+  const opacity   = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(16)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(opacity, { toValue: 1, duration: 240, delay: idx * 50, useNativeDriver: true }),
+      Animated.spring(translateY, { toValue: 0, delay: idx * 50, useNativeDriver: true, tension: 90, friction: 14 }),
+    ]).start();
+  }, []);
+
+  return (
+    <Animated.View
+      style={[
+        styles.notifCard,
+        {
+          backgroundColor: isUnread ? p.surfaceTint : p.surface,
+          borderColor: isUnread ? p.accentDark : p.line,
+          opacity,
+          transform: [{ translateY }],
+        },
+      ]}
+    >
+      <View style={[styles.notifIcon, { backgroundColor: color + '18' }]}>
+        <MaterialCommunityIcons name={icon} size={18} color={color} />
+      </View>
+      <View style={styles.notifBody}>
+        <Text style={[styles.notifTitle, { color: p.ink }, isUnread && { fontWeight: '700' }]}>{n.title}</Text>
+        <Text style={[styles.notifText, { color: p.inkSoft }]}>{n.body}</Text>
+        <Text style={[styles.notifTime, { color: p.inkSoft }]}>{formatRelativeTime(n.createdAt)}</Text>
+      </View>
+      {isUnread ? <View style={[styles.unreadDot, { backgroundColor: p.accentDark }]} /> : null}
+    </Animated.View>
+  );
+}
+
+function formatRelativeTime(iso) {
+  if (!iso) return '';
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return formatDate(iso);
+}
+
+// ─── Pets ──────────────────────────────────────────────────────────────────
+
+export function PetsScreen({ navigate }) {
+  const { mode } = useAuth();
+  const { palette: p } = useTheme();
+  const t = useT();
+  const [pets, setPets] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState('');
+  const [form, setForm] = useState({
+    name: '', breed: '', species: '', gender: '', birthDate: '', age: '', weight: '', color: '',
+  });
+
+  async function loadPets(isRefresh = false) {
+    if (isRefresh) setRefreshing(true);
+    else setLoading(true);
+    try {
+      const next = await listPets(mode);
+      setPets(next);
+      setError('');
+    } catch (err) {
+      setError(err.message || 'Unable to load pets.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }
+
+  useEffect(() => { loadPets(); }, [mode]);
+
+  function setField(key, value) {
+    setForm((c) => ({ ...c, [key]: value }));
+  }
+
+  async function handleAddPet() {
+    const validationError = validatePetForm(form);
+    if (validationError) { setError(validationError); return; }
+    try {
+      const next = await addPet(mode, {
+        ...form,
+        age: form.birthDate ? formatAgeFromBirthDate(form.birthDate) : form.age,
+      });
+      hapticSuccess();
+      setPets((c) => [next, ...c]);
+      setForm({ name: '', breed: '', species: '', gender: '', birthDate: '', age: '', weight: '', color: '' });
+    } catch (err) {
+      setError(err.message || 'Unable to add pet.');
+      hapticError();
+    }
+  }
+
+  return (
+    <Screen refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => loadPets(true)} />}>
+      <HeroTitle eyebrow={t('tab_pets')} title={t('pets_title')} subtitle={t('pets_subtitle')} />
 
       {error ? <Notice tone="danger" icon="alert-circle" body={error} /> : null}
 
-      <SectionTitle title="List" subtitle={`${pets.length} total`} />
-      {pets.length === 0 ? (
-        <EmptyState icon="paw-outline" title="No pets yet" subtitle="Add your first pet below." />
+      <SectionTitle title={t('pets_list')} subtitle={`${pets.length} total`} />
+      {!loading && pets.length === 0 ? (
+        <EmptyState icon="paw-outline" title={t('pets_none')} subtitle={t('pets_none_sub')} />
       ) : (
         pets.map((pet) => (
           <Pressable
             key={pet.id}
             onPress={() => navigate('petDetails', { pet })}
-            style={({ pressed }) => [styles.petCard, pressed ? styles.pressed : null]}
+            style={({ pressed }) => [
+              styles.petCard,
+              { backgroundColor: p.surface, borderColor: p.line },
+              pressed ? styles.pressed : null,
+            ]}
           >
-            <View style={styles.petBadge}>
-              <MaterialCommunityIcons name="paw-outline" size={20} color={palette.ink} />
+            <View style={[styles.petBadge, { backgroundColor: p.surfaceMuted }]}>
+              <MaterialCommunityIcons name="paw-outline" size={20} color={p.ink} />
             </View>
             <View style={styles.petCopy}>
-              <Text style={styles.petName}>{pet.name}</Text>
-              <Text style={styles.petMeta}>{pet.breed || pet.species || 'Pet profile'}</Text>
+              <Text style={[styles.petName, { color: p.ink }]}>{pet.name}</Text>
+              <Text style={[styles.petMeta, { color: p.inkSoft }]}>{pet.breed || pet.species || 'Pet profile'}</Text>
             </View>
-            <StatusBadge label={pet.medicalCard ? 'Card ready' : 'No card'} tone={pet.medicalCard ? 'success' : 'warning'} />
+            <StatusBadge
+              label={pet.medicalCard ? t('pets_card_ready') : t('pets_no_card')}
+              tone={pet.medicalCard ? 'success' : 'warning'}
+            />
           </Pressable>
         ))
       )}
 
       <GlassCard style={styles.formPanel}>
-        <SectionTitle title="Add pet" subtitle="Only the essentials." />
-        <Field label="Name" value={form.name} onChangeText={(value) => setField('name', value)} placeholder="Luna" />
-        <Field label="Breed" value={form.breed} onChangeText={(value) => setField('breed', value)} placeholder="Poodle" />
-        <Field label="Species" value={form.species} onChangeText={(value) => setField('species', value)} placeholder="Dog, cat..." />
+        <SectionTitle title={t('pets_add')} subtitle="Only the essentials." />
+        <Field label={t('pets_name')}    value={form.name}   onChangeText={(v) => setField('name', v)}   placeholder="Luna" />
+        <Field label={t('pets_breed')}   value={form.breed}  onChangeText={(v) => setField('breed', v)}  placeholder="Poodle" />
+        <Field label={t('pets_species')} value={form.species} onChangeText={(v) => setField('species', v)} placeholder="Dog, cat…" />
         <View style={styles.row}>
           <View style={styles.rowCell}>
-            <Field label="Gender" value={form.gender} onChangeText={(value) => setField('gender', value)} placeholder="Female" />
+            <Field label={t('pets_gender')} value={form.gender} onChangeText={(v) => setField('gender', v)} placeholder="Female" />
           </View>
           <View style={styles.rowCell}>
-            <DateField label="Birth date" value={form.birthDate} onChange={(value) => setField('birthDate', value)} maximumDate={new Date()} />
+            <DateField label={t('pets_birth')} value={form.birthDate} onChange={(v) => setField('birthDate', v)} maximumDate={new Date()} />
           </View>
         </View>
         <View style={styles.row}>
           <View style={styles.rowCell}>
-            <Field label="Weight" value={form.weight} onChangeText={(value) => setField('weight', value)} placeholder="5 kg" />
+            <Field label={t('pets_weight')} value={form.weight} onChangeText={(v) => setField('weight', v)} placeholder="5 kg" />
           </View>
           <View style={styles.rowCell}>
-            <Field label="Color" value={form.color} onChangeText={(value) => setField('color', value)} placeholder="White" />
+            <Field label={t('pets_color')} value={form.color} onChangeText={(v) => setField('color', v)} placeholder="White" />
           </View>
         </View>
-        <PrimaryButton label="Save pet" icon="content-save-outline" onPress={handleAddPet} />
+        <PrimaryButton label={t('pets_save')} icon="content-save-outline" onPress={handleAddPet} />
       </GlassCard>
     </Screen>
   );
 }
 
+// ─── Pet Details ───────────────────────────────────────────────────────────
+
 export function PetDetailsScreen({ navigate, route }) {
   const { mode } = useAuth();
+  const { palette: p } = useTheme();
+  const t = useT();
   const pet = route?.params?.pet;
   const [medicalCard, setMedicalCard] = useState(null);
   const [medicalCardError, setMedicalCardError] = useState('');
 
   useEffect(() => {
     let active = true;
-
     if (!pet?.id) return undefined;
-
     getMedicalCard(mode, pet.id)
-      .then((card) => {
-        if (!active) return;
-        setMedicalCard(card || null);
-      })
-      .catch((currentError) => {
-        if (!active) return;
-        setMedicalCard(null);
-        setMedicalCardError(currentError.message || 'Unable to load medical data.');
-      });
-
-    return () => {
-      active = false;
-    };
+      .then((card) => { if (active) setMedicalCard(card || null); })
+      .catch((err) => { if (active) { setMedicalCard(null); setMedicalCardError(err.message || 'Unable to load medical data.'); } });
+    return () => { active = false; };
   }, [mode, pet?.id]);
 
   if (!pet) {
@@ -354,42 +601,37 @@ export function PetDetailsScreen({ navigate, route }) {
 
   return (
     <Screen>
-      <AvatarBadge
-        label={pet.name}
-        sublabel={sublabel}
-        accent={['#111315']}
-        icon="paw"
-      />
+      <AvatarBadge label={pet.name} sublabel={sublabel} accent={['#111315']} icon="paw" />
 
       <View style={styles.metricGrid}>
-        <MetricTile icon="cake-variant-outline" label="Age" value={ageValue} />
-        <MetricTile icon="scale-bathroom" label="Weight" value={pet.weight || 'Not set'} />
-        <MetricTile icon="palette-outline" label="Color" value={pet.color || 'Not set'} />
-        <MetricTile icon="dna" label="Species" value={pet.species || 'Not set'} />
+        <MetricTile icon="cake-variant-outline" label="Age"     value={ageValue} />
+        <MetricTile icon="scale-bathroom"       label="Weight"  value={pet.weight || 'Not set'} />
+        <MetricTile icon="palette-outline"      label="Color"   value={pet.color || 'Not set'} />
+        <MetricTile icon="dna"                  label="Species" value={pet.species || 'Not set'} />
       </View>
 
       <GlassCard style={styles.healthCard}>
         <SectionTitle
-          title="Medical card"
+          title={t('medical_title')}
           subtitle={cardItems.length > 0 ? 'Saved health details.' : 'No medical data yet.'}
         />
         {medicalCardError ? <Notice tone="danger" icon="alert-circle" body={medicalCardError} /> : null}
         {cardItems.length > 0 ? (
           <View style={styles.medicalSummary}>
             {cardItems.map((item) => (
-              <View key={item.label} style={styles.medicalRow}>
-                <Text style={styles.medicalLabel}>{item.label}</Text>
-                <Text style={styles.medicalValue}>{item.value}</Text>
+              <View key={item.label} style={[styles.medicalRow, { borderBottomColor: p.line }]}>
+                <Text style={[styles.medicalLabel, { color: p.inkSoft }]}>{item.label}</Text>
+                <Text style={[styles.medicalValue, { color: p.ink }]}>{item.value}</Text>
               </View>
             ))}
           </View>
         ) : (
-          <View style={styles.medicalEmpty}>
-            <Text style={styles.medicalEmptyText}>Add allergies, medications, vaccinations and notes for providers.</Text>
+          <View style={[styles.medicalEmpty, { backgroundColor: p.surfaceMuted }]}>
+            <Text style={[styles.medicalEmptyText, { color: p.inkSoft }]}>{t('medical_empty_text')}</Text>
           </View>
         )}
         <PrimaryButton
-          label={cardItems.length > 0 ? 'Edit medical data' : 'Add medical data'}
+          label={cardItems.length > 0 ? t('medical_edit') : t('medical_add')}
           icon="hospital-box-outline"
           onPress={() => navigate('medical', { pet })}
           style={styles.healthButton}
@@ -399,26 +641,22 @@ export function PetDetailsScreen({ navigate, route }) {
   );
 }
 
+// ─── Medical Card ──────────────────────────────────────────────────────────
+
 export function MedicalCardScreen({ route }) {
   const { mode } = useAuth();
+  const t = useT();
   const pet = route?.params?.pet;
   const [form, setForm] = useState({
-    allergies: '',
-    chronicDiseases: '',
-    medications: '',
-    vaccinations: '',
-    pastIllnesses: '',
-    notes: '',
-    lastVetVisit: '',
+    allergies: '', chronicDiseases: '', medications: '',
+    vaccinations: '', pastIllnesses: '', notes: '', lastVetVisit: '',
   });
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
     let active = true;
-
     if (!pet?.id) return undefined;
-
     getMedicalCard(mode, pet.id)
       .then((card) => {
         if (!active || !card) return;
@@ -432,38 +670,26 @@ export function MedicalCardScreen({ route }) {
           lastVetVisit: card.lastVetVisit ? String(card.lastVetVisit).slice(0, 10) : '',
         });
       })
-      .catch((currentError) => {
-        if (!active) return;
-        setError(currentError.message || 'Unable to load medical card.');
-      });
-
-    return () => {
-      active = false;
-    };
+      .catch((err) => { if (active) setError(err.message || 'Unable to load medical card.'); });
+    return () => { active = false; };
   }, [mode, pet?.id]);
 
-  function setField(key, value) {
-    setForm((current) => ({ ...current, [key]: value }));
-  }
+  function setField(key, value) { setForm((c) => ({ ...c, [key]: value })); }
 
   async function handleSave() {
     const validationError = validateMedicalCardForm(form);
-    if (validationError) {
-      setError(validationError);
-      return;
-    }
-
-    setError('');
-    setSaved(false);
-
+    if (validationError) { setError(validationError); return; }
+    setError(''); setSaved(false);
     try {
       await saveMedicalCard(mode, pet.id, {
         ...form,
         lastVetVisit: form.lastVetVisit ? new Date(`${form.lastVetVisit}T09:00:00`).toISOString() : null,
       });
+      hapticSuccess();
       setSaved(true);
-    } catch (currentError) {
-      setError(currentError.message || 'Unable to save medical card.');
+    } catch (err) {
+      setError(err.message || 'Unable to save medical card.');
+      hapticError();
     }
   }
 
@@ -477,27 +703,29 @@ export function MedicalCardScreen({ route }) {
 
   return (
     <Screen>
-      <HeroTitle eyebrow="Medical card" title={pet.name} subtitle="Important health notes." />
-
-      {saved ? <Notice tone="success" icon="check-circle-outline" body="Medical card saved." /> : null}
-      {error ? <Notice tone="danger" icon="alert-circle" body={error} /> : null}
-
+      <HeroTitle eyebrow={t('medical_title')} title={pet.name} subtitle="Important health notes." />
+      {saved  ? <Notice tone="success" icon="check-circle-outline" body={t('medical_saved')} /> : null}
+      {error  ? <Notice tone="danger"  icon="alert-circle"         body={error}               /> : null}
       <GlassCard style={styles.formPanel}>
-        <DateField label="Last vet visit" value={form.lastVetVisit} onChange={(value) => setField('lastVetVisit', value)} maximumDate={new Date()} />
-        <Field label="Allergies" value={form.allergies} onChangeText={(value) => setField('allergies', value)} placeholder="Optional" multiline />
-        <Field label="Chronic conditions" value={form.chronicDiseases} onChangeText={(value) => setField('chronicDiseases', value)} placeholder="Optional" multiline />
-        <Field label="Medications" value={form.medications} onChangeText={(value) => setField('medications', value)} placeholder="Optional" multiline />
-        <Field label="Vaccinations" value={form.vaccinations} onChangeText={(value) => setField('vaccinations', value)} placeholder="Optional" multiline />
-        <Field label="Past illnesses" value={form.pastIllnesses} onChangeText={(value) => setField('pastIllnesses', value)} placeholder="Optional" multiline />
-        <Field label="Notes" value={form.notes} onChangeText={(value) => setField('notes', value)} placeholder="Optional" multiline />
-        <PrimaryButton label="Save card" icon="content-save-outline" onPress={handleSave} />
+        <DateField label={t('medical_last_visit')} value={form.lastVetVisit} onChange={(v) => setField('lastVetVisit', v)} maximumDate={new Date()} />
+        <Field label={t('medical_allergies')}    value={form.allergies}       onChangeText={(v) => setField('allergies', v)}       placeholder="Optional" multiline />
+        <Field label={t('medical_chronic')}      value={form.chronicDiseases} onChangeText={(v) => setField('chronicDiseases', v)} placeholder="Optional" multiline />
+        <Field label={t('medical_medications')}  value={form.medications}     onChangeText={(v) => setField('medications', v)}     placeholder="Optional" multiline />
+        <Field label={t('medical_vaccinations')} value={form.vaccinations}    onChangeText={(v) => setField('vaccinations', v)}    placeholder="Optional" multiline />
+        <Field label={t('medical_past_ill')}     value={form.pastIllnesses}   onChangeText={(v) => setField('pastIllnesses', v)}   placeholder="Optional" multiline />
+        <Field label={t('medical_notes')}        value={form.notes}           onChangeText={(v) => setField('notes', v)}           placeholder="Optional" multiline />
+        <PrimaryButton label={t('medical_save')} icon="content-save-outline" onPress={handleSave} />
       </GlassCard>
     </Screen>
   );
 }
 
+// ─── Profile ───────────────────────────────────────────────────────────────
+
 export function ProfileScreen() {
   const { apiLabel, logout, mode, saveProfile, user } = useAuth();
+  const { palette: p } = useTheme();
+  const t = useT();
   const [form, setForm] = useState({
     firstName: user?.firstName || '',
     lastName: user?.lastName || '',
@@ -508,45 +736,28 @@ export function ProfileScreen() {
 
   useEffect(() => {
     let active = true;
-
     getProfile(mode)
       .then((profile) => {
         if (!active) return;
-        setForm({
-          firstName: profile.firstName || '',
-          lastName: profile.lastName || '',
-          phone: profile.phone || '',
-        });
+        setForm({ firstName: profile.firstName || '', lastName: profile.lastName || '', phone: profile.phone || '' });
       })
-      .catch((currentError) => {
-        if (!active) return;
-        setError(currentError.message || 'Unable to load profile.');
-      });
-
-    return () => {
-      active = false;
-    };
+      .catch((err) => { if (active) setError(err.message || 'Unable to load profile.'); });
+    return () => { active = false; };
   }, [mode]);
 
-  function setField(key, value) {
-    setForm((current) => ({ ...current, [key]: value }));
-  }
+  function setField(key, value) { setForm((c) => ({ ...c, [key]: value })); }
 
   async function handleSave() {
     const validationError = validateProfileForm(form);
-    if (validationError) {
-      setError(validationError);
-      return;
-    }
-
-    setError('');
-    setSaved(false);
-
+    if (validationError) { setError(validationError); return; }
+    setError(''); setSaved(false);
     try {
       await saveProfile(form);
+      hapticSuccess();
       setSaved(true);
-    } catch (currentError) {
-      setError(currentError.message || 'Unable to save profile.');
+    } catch (err) {
+      setError(err.message || 'Unable to save profile.');
+      hapticError();
     }
   }
 
@@ -554,60 +765,118 @@ export function ProfileScreen() {
 
   return (
     <Screen>
-      <AvatarBadge
-        label={label}
-        sublabel={user?.email || 'owner@mypet.app'}
-        initials={initials(user)}
-        accent={['#111315']}
-      />
+      <AvatarBadge label={label} sublabel={user?.email || 'owner@mypet.app'} initials={initials(user)} accent={['#111315']} />
 
       <View style={styles.metricRow}>
-        <MetricTile icon="cellphone-marker" label="Mode" value={mode === 'demo' ? 'Preview' : 'Live'} />
-        <MetricTile icon="lan-connect" label="Source" value={apiLabel} />
+        <MetricTile icon="cellphone-marker" label={t('profile_mode')}   value={mode === 'demo' ? t('profile_preview') : t('profile_live')} />
+        <MetricTile icon="lan-connect"      label={t('profile_source')} value={apiLabel} />
       </View>
 
-      {saved ? <Notice tone="success" icon="check-circle-outline" body="Profile saved." /> : null}
-      {error ? <Notice tone="danger" icon="alert-circle" body={error} /> : null}
+      {saved ? <Notice tone="success" icon="check-circle-outline" body={t('profile_saved')} /> : null}
+      {error ? <Notice tone="danger"  icon="alert-circle"         body={error}              /> : null}
 
       <GlassCard style={styles.formPanel}>
-        <SectionTitle title="Profile" subtitle="Basic account info." />
-        <Field label="First name" value={form.firstName} onChangeText={(value) => setField('firstName', value)} placeholder="Aruzhan" />
-        <Field label="Last name" value={form.lastName} onChangeText={(value) => setField('lastName', value)} placeholder="Bektas" />
-        <Field label="Phone" value={form.phone} onChangeText={(value) => setField('phone', value)} placeholder="+7 777 000 0000" keyboardType="phone-pad" autoCapitalize="none" />
-        <PrimaryButton label="Save" icon="content-save-outline" onPress={handleSave} />
-        <SecondaryButton label="Sign out" icon="logout" onPress={logout} />
+        <SectionTitle title={t('profile_title')} subtitle={t('profile_subtitle')} />
+        <Field label={t('auth_first_name')} value={form.firstName} onChangeText={(v) => setField('firstName', v)} placeholder="Aruzhan" />
+        <Field label={t('auth_last_name')}  value={form.lastName}  onChangeText={(v) => setField('lastName', v)}  placeholder="Bektas" />
+        <Field label={t('auth_phone')}      value={form.phone}     onChangeText={(v) => setField('phone', v)}     placeholder="+7 777 000 0000" keyboardType="phone-pad" autoCapitalize="none" />
+        <PrimaryButton label={t('profile_save')} icon="content-save-outline" onPress={handleSave} />
+        <SecondaryButton label={t('profile_sign_out')} icon="logout" onPress={logout} />
+      </GlassCard>
+
+      <GlassCard style={styles.formPanel}>
+        <SectionTitle title="Appearance" />
+        <View style={[styles.preferenceRow, { borderBottomColor: p.line }]}>
+          <View style={styles.preferenceLeft}>
+            <MaterialCommunityIcons name="weather-night" size={18} color={p.ink} />
+            <Text style={[styles.preferenceLabel, { color: p.ink }]}>{t('profile_dark_mode')}</Text>
+          </View>
+          <ThemeToggle />
+        </View>
+        <LanguagePicker />
       </GlassCard>
     </Screen>
   );
 }
 
+function LanguagePicker() {
+  const { palette: p } = useTheme();
+  const { locale, setLocale } = useLocale();
+  const t = useT();
+
+  return (
+    <View style={styles.preferenceRow}>
+      <View style={styles.preferenceLeft}>
+        <MaterialCommunityIcons name="translate" size={18} color={p.ink} />
+        <Text style={[styles.preferenceLabel, { color: p.ink }]}>{t('profile_language')}</Text>
+      </View>
+      <View style={styles.langRow}>
+        {LOCALES.map((l) => (
+          <Pressable
+            key={l.code}
+            onPress={() => setLocale(l.code)}
+            style={[
+              styles.langBtn,
+              { borderColor: locale === l.code ? p.accent : p.line, backgroundColor: locale === l.code ? p.accentMuted : p.surface },
+            ]}
+          >
+            <Text style={[styles.langBtnText, { color: locale === l.code ? p.accentDark : p.inkSoft }]}>{l.label}</Text>
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+// ─── Helpers ───────────────────────────────────────────────────────────────
+
 function MetricTile({ icon, label, value }) {
+  const { palette: p } = useTheme();
   return (
     <GlassCard style={styles.metricTile}>
-      <View style={styles.metricIcon}>
-        <MaterialCommunityIcons name={icon} size={18} color={palette.ink} />
+      <View style={[styles.metricIcon, { backgroundColor: p.surfaceMuted }]}>
+        <MaterialCommunityIcons name={icon} size={18} color={p.ink} />
       </View>
-      <Text style={styles.metricLabel}>{label}</Text>
-      <Text style={styles.metricValue}>{value}</Text>
+      <Text style={[styles.metricLabel, { color: p.inkSoft }]}>{label}</Text>
+      <Text style={[styles.metricValue, { color: p.ink }]}>{value}</Text>
     </GlassCard>
   );
 }
 
 function buildMedicalCardItems(card) {
   if (!card) return [];
-
   return [
-    { label: 'Last vet visit', value: card.lastVetVisit ? formatDate(card.lastVetVisit) : '' },
-    { label: 'Allergies', value: card.allergies },
-    { label: 'Chronic conditions', value: card.chronicDiseases },
-    { label: 'Medications', value: card.medications },
-    { label: 'Vaccinations', value: card.vaccinations },
-    { label: 'Past illnesses', value: card.pastIllnesses },
-    { label: 'Notes', value: card.notes },
+    { label: 'Last vet visit',      value: card.lastVetVisit ? formatDate(card.lastVetVisit) : '' },
+    { label: 'Allergies',           value: card.allergies },
+    { label: 'Chronic conditions',  value: card.chronicDiseases },
+    { label: 'Medications',         value: card.medications },
+    { label: 'Vaccinations',        value: card.vaccinations },
+    { label: 'Past illnesses',      value: card.pastIllnesses },
+    { label: 'Notes',               value: card.notes },
   ].filter((item) => item.value && String(item.value).trim());
 }
 
+// ─── StyleSheet ────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
+  tabRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    backgroundColor: palette.surfaceMuted,
+    borderRadius: radius.lg,
+    padding: 4,
+  },
+  tabChip: {
+    flex: 1,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.md,
+    alignItems: 'center',
+  },
+  tabChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+    fontFamily: typography.body,
+  },
   bookingCard: {
     gap: spacing.sm,
   },
@@ -622,28 +891,53 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   bookingTitle: {
-    color: palette.ink,
     fontSize: 16,
     fontWeight: '700',
     fontFamily: typography.display,
   },
   bookingMeta: {
-    color: palette.inkSoft,
     fontSize: 13,
     lineHeight: 18,
     fontFamily: typography.body,
   },
   bookingSubline: {
-    color: palette.inkSoft,
     fontSize: 13,
     fontFamily: typography.body,
   },
+  bookingSublineLabel: {
+    fontWeight: '600',
+  },
   bookingNote: {
-    color: palette.ink,
     fontSize: 14,
     lineHeight: 20,
     fontFamily: typography.body,
   },
+  cancelBlock: {
+    gap: spacing.sm,
+    paddingTop: spacing.xs,
+    borderTopWidth: 1,
+    marginTop: spacing.xs,
+  },
+  cancelTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    fontFamily: typography.body,
+  },
+  reasonRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+  },
+  reasonPill: {
+    minHeight: 34,
+    paddingHorizontal: spacing.sm,
+  },
+  cancelActions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  cancelConfirmBtn: { flex: 1 },
+  cancelKeepBtn: { flex: 1, minHeight: 44 },
   reviewBlock: {
     paddingTop: spacing.xs,
   },
@@ -660,17 +954,16 @@ const styles = StyleSheet.create({
     borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: palette.surfaceMuted,
     borderWidth: 1,
-    borderColor: palette.line,
-  },
-  ratingButtonActive: {
-    backgroundColor: palette.black,
-    borderColor: palette.black,
   },
   reviewSummary: {
     gap: 8,
     paddingTop: spacing.xs,
+  },
+  reviewText: {
+    fontSize: 13,
+    lineHeight: 18,
+    fontFamily: typography.body,
   },
   timelineRow: {
     flexDirection: 'row',
@@ -687,45 +980,73 @@ const styles = StyleSheet.create({
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: '#CDD2D7',
-  },
-  timelineDotDone: {
-    backgroundColor: palette.black,
-  },
-  timelineDotActive: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
   },
   timelineLabel: {
-    color: palette.inkSoft,
     fontSize: 10,
     fontFamily: typography.body,
   },
-  timelineLabelDone: {
-    color: palette.ink,
-    fontWeight: '600',
-  },
   timelineCancelled: {
-    color: '#B42318',
     fontSize: 12,
     fontWeight: '700',
     fontFamily: typography.body,
   },
-  reviewText: {
-    color: palette.inkSoft,
+  clearBtn: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+  },
+  clearBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    fontFamily: typography.body,
+  },
+  notifCard: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    borderWidth: 1,
+    alignItems: 'flex-start',
+  },
+  notifIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  notifBody: {
+    flex: 1,
+    gap: 3,
+  },
+  notifTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    fontFamily: typography.body,
+  },
+  notifText: {
     fontSize: 13,
     lineHeight: 18,
     fontFamily: typography.body,
+  },
+  notifTime: {
+    fontSize: 11,
+    fontFamily: typography.body,
+    marginTop: 2,
+  },
+  unreadDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginTop: 4,
+    flexShrink: 0,
   },
   petCard: {
     minHeight: 76,
     borderRadius: radius.lg,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
-    backgroundColor: palette.surface,
     borderWidth: 1,
-    borderColor: palette.line,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
@@ -736,20 +1057,17 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: palette.surfaceMuted,
   },
   petCopy: {
     flex: 1,
     gap: 2,
   },
   petName: {
-    color: palette.ink,
     fontSize: 16,
     fontWeight: '700',
     fontFamily: typography.display,
   },
   petMeta: {
-    color: palette.inkSoft,
     fontSize: 13,
     fontFamily: typography.body,
   },
@@ -778,16 +1096,13 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingBottom: spacing.sm,
     borderBottomWidth: 1,
-    borderBottomColor: palette.line,
   },
   medicalLabel: {
-    color: palette.inkSoft,
     fontSize: 12,
     fontWeight: '600',
     fontFamily: typography.body,
   },
   medicalValue: {
-    color: palette.ink,
     fontSize: 14,
     lineHeight: 20,
     fontFamily: typography.body,
@@ -795,10 +1110,8 @@ const styles = StyleSheet.create({
   medicalEmpty: {
     padding: spacing.md,
     borderRadius: radius.md,
-    backgroundColor: palette.surfaceMuted,
   },
   medicalEmptyText: {
-    color: palette.inkSoft,
     fontSize: 13,
     lineHeight: 18,
     fontFamily: typography.body,
@@ -818,21 +1131,51 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: palette.surfaceMuted,
     alignItems: 'center',
     justifyContent: 'center',
   },
   metricLabel: {
-    color: palette.inkSoft,
     fontSize: 11,
     fontWeight: '600',
     fontFamily: typography.body,
   },
   metricValue: {
-    color: palette.ink,
     fontSize: 16,
     fontWeight: '700',
     fontFamily: typography.display,
+  },
+  preferenceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    gap: spacing.md,
+  },
+  preferenceLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  preferenceLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    fontFamily: typography.body,
+  },
+  langRow: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  langBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+  },
+  langBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    fontFamily: typography.body,
   },
   pressed: {
     opacity: 0.92,

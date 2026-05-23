@@ -10,6 +10,14 @@ import { fileURLToPath } from 'url';
 
 import logger from './lib/logger.js';
 import { errorHandler, notFound } from './middleware/errorHandler.js';
+
+// Prevent unhandled errors from crashing the process
+process.on('unhandledRejection', (reason) => {
+  logger.error('Unhandled promise rejection', { reason: String(reason) });
+});
+process.on('uncaughtException', (err) => {
+  logger.error('Uncaught exception', { message: err.message, stack: err.stack });
+});
 import { requestLogger } from './middleware/logger.js';
 import authRoutes from './routes/auth.js';
 import userRoutes from './routes/users.js';
@@ -82,6 +90,8 @@ const limiter = rateLimit({
 app.use('/api', limiter);
 app.use('/api/auth/login', rateLimit({ windowMs: 15 * 60 * 1000, max: 10 }));
 app.use('/api/auth/register', rateLimit({ windowMs: 60 * 60 * 1000, max: 5 }));
+// Prevent rapid button-click spam on booking creation / status change
+app.use('/api/bookings', rateLimit({ windowMs: 60 * 1000, max: 20, message: { error: 'Too many booking requests, slow down.' } }));
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);

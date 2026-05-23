@@ -7,7 +7,7 @@ ENV VITE_API_URL=$VITE_API_URL
 ENV EXPO_PUBLIC_API_URL=$EXPO_PUBLIC_API_URL
 
 COPY package*.json ./
-RUN npm install --include=dev
+RUN npm install --include=dev --legacy-peer-deps
 COPY . .
 RUN npm run build
 

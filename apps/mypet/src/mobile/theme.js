@@ -1,6 +1,6 @@
 import { Platform } from 'react-native';
 
-export const palette = {
+export const lightPalette = {
   bg: '#EEF4F1',
   surface: 'rgba(255,255,255,0.88)',
   surfaceMuted: '#F4F7F5',
@@ -19,6 +19,29 @@ export const palette = {
   warning: '#F2A93B',
   danger: '#E95F5F',
 };
+
+export const darkPalette = {
+  bg: '#121416',
+  surface: '#1B1F24',
+  surfaceMuted: '#20242C',
+  surfaceTint: '#172019',
+  ink: '#F0F2F4',
+  inkSoft: '#78828F',
+  line: 'rgba(255,255,255,0.06)',
+  accent: '#2DBE6C',
+  accentMuted: 'rgba(45,190,108,0.10)',
+  accentDark: '#4ADE80',
+  skyMuted: 'rgba(59,130,246,0.05)',
+  lilacMuted: 'rgba(139,92,246,0.05)',
+  black: '#F0F2F4',
+  white: '#121416',
+  success: '#4ADE80',
+  warning: '#FBBF24',
+  danger: '#F87171',
+};
+
+// backward-compat alias
+export const palette = lightPalette;
 
 export const spacing = {
   xs: 8,

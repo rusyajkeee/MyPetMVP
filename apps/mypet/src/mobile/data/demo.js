@@ -226,6 +226,99 @@ const demoBookings = [
   },
 ];
 
+export const providerUser = {
+  id: 'provider-demo',
+  firstName: 'Amina',
+  lastName: 'Sarsen',
+  email: 'provider@mypet.app',
+  phone: '+7 777 800 2211',
+  role: 'PROVIDER',
+  businessName: 'Aster Veterinary House',
+};
+
+const providerInboxBookings = [
+  {
+    id: 'pb-1',
+    status: 'PENDING',
+    scheduledAt: '2026-05-15T10:00:00.000Z',
+    createdAt: '2026-05-11T09:00:00.000Z',
+    acceptedAt: null, startedAt: null, completedAt: null, cancelledAt: null,
+    notes: 'Dog is anxious around other animals',
+    service: { id: 'svc-aster-1', title: 'Wellness visit', priceKzt: 22000, durationMin: 50 },
+    customer: { id: 'cust-1', firstName: 'Dana', lastName: 'Ivanova', phone: '77771110001' },
+    pet: { id: 'cpet-1', name: 'Buddy', breed: 'Labrador', species: 'Dog' },
+    review: null,
+  },
+  {
+    id: 'pb-2',
+    status: 'PENDING',
+    scheduledAt: '2026-05-16T14:00:00.000Z',
+    createdAt: '2026-05-11T10:30:00.000Z',
+    acceptedAt: null, startedAt: null, completedAt: null, cancelledAt: null,
+    notes: '',
+    service: { id: 'svc-aster-2', title: 'Vaccination package', priceKzt: 18000, durationMin: 35 },
+    customer: { id: 'cust-2', firstName: 'Mira', lastName: 'Kim', phone: '77002223344' },
+    pet: { id: 'cpet-2', name: 'Mochi', breed: 'British Shorthair', species: 'Cat' },
+    review: null,
+  },
+  {
+    id: 'pb-3',
+    status: 'ACCEPTED',
+    scheduledAt: '2026-05-13T11:00:00.000Z',
+    createdAt: '2026-05-10T15:00:00.000Z',
+    acceptedAt: '2026-05-11T08:30:00.000Z',
+    startedAt: null, completedAt: null, cancelledAt: null,
+    notes: 'Please check her teeth too',
+    service: { id: 'svc-aster-3', title: 'Digestive consultation', priceKzt: 26000, durationMin: 60 },
+    customer: { id: 'cust-3', firstName: 'Arman', lastName: 'Bektas', phone: '77753335566' },
+    pet: { id: 'cpet-3', name: 'Luna', breed: 'Mini Poodle', species: 'Dog' },
+    review: null,
+  },
+  {
+    id: 'pb-4',
+    status: 'COMPLETED',
+    scheduledAt: '2026-05-08T14:00:00.000Z',
+    createdAt: '2026-05-06T10:00:00.000Z',
+    acceptedAt: '2026-05-07T12:00:00.000Z',
+    startedAt: '2026-05-08T14:05:00.000Z',
+    completedAt: '2026-05-08T15:10:00.000Z',
+    cancelledAt: null,
+    notes: '',
+    service: { id: 'svc-aster-1', title: 'Wellness visit', priceKzt: 22000, durationMin: 50 },
+    customer: { id: 'cust-4', firstName: 'Sofia', lastName: 'Park', phone: '77074447788' },
+    pet: { id: 'cpet-4', name: 'Rex', breed: 'German Shepherd', species: 'Dog' },
+    review: null,
+  },
+  {
+    id: 'pb-5',
+    status: 'COMPLETED',
+    scheduledAt: '2026-05-05T10:00:00.000Z',
+    createdAt: '2026-05-03T08:00:00.000Z',
+    acceptedAt: '2026-05-04T09:00:00.000Z',
+    startedAt: '2026-05-05T10:05:00.000Z',
+    completedAt: '2026-05-05T10:50:00.000Z',
+    cancelledAt: null,
+    notes: '',
+    service: { id: 'svc-aster-2', title: 'Vaccination package', priceKzt: 18000, durationMin: 35 },
+    customer: { id: 'cust-5', firstName: 'Lina', lastName: 'Rys', phone: '77715559900' },
+    pet: { id: 'cpet-5', name: 'Charlie', breed: 'Beagle', species: 'Dog' },
+    review: null,
+  },
+  {
+    id: 'pb-6',
+    status: 'CANCELLED',
+    scheduledAt: '2026-05-07T15:00:00.000Z',
+    createdAt: '2026-05-05T11:00:00.000Z',
+    acceptedAt: null, startedAt: null, completedAt: null,
+    cancelledAt: '2026-05-06T10:00:00.000Z',
+    notes: 'Emergency cancellation',
+    service: { id: 'svc-aster-3', title: 'Digestive consultation', priceKzt: 26000, durationMin: 60 },
+    customer: { id: 'cust-6', firstName: 'Timur', lastName: 'Aben', phone: '77766661122' },
+    pet: null,
+    review: null,
+  },
+];
+
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
@@ -238,6 +331,7 @@ export function createInitialDemoState() {
     medicalCards: clone(demoMedicalCards),
     favoriteProviderIds: ['provider-aster'],
     extraProviderReviews: {},
+    providerInboxBookings: clone(providerInboxBookings),
   };
 }
 

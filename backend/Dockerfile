@@ -15,4 +15,4 @@ RUN npx prisma generate
 
 EXPOSE 4000
 
-CMD ["sh", "-c", "npx prisma migrate deploy && (node prisma/seed.js || true) && node src/index.js"]
+CMD ["sh", "-c", "npx prisma migrate deploy && node prisma/init-db.js && node src/index.js"]

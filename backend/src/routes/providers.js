@@ -88,6 +88,8 @@ router.get('/nearby', async (req, res, next) => {
           businessName: p.businessName || (p.user.firstName + ' ' + p.user.lastName),
           latitude: p.latitude,
           longitude: p.longitude,
+          lat: p.latitude,
+          lng: p.longitude,
           distanceKm: parseFloat(distanceKm.toFixed(2)),
           category: p.category,
           rating: avgRating ? parseFloat(avgRating.toFixed(1)) : null,
@@ -97,6 +99,8 @@ router.get('/nearby', async (req, res, next) => {
           isVerified: p.isVerified || p.verified,
           user: p.user,
           services: p.services,
+          description: p.description,
+          phone: p.user?.phone || null,
         };
       })
       .filter(p => p.distanceKm <= query.radius)
@@ -125,6 +129,53 @@ const createProviderSchema = z.object({
 });
 
 // Protected provider routes (must be before /:id so /me is not captured as id)
+
+router.get('/me/bookings', authMiddleware, attachUser, requireRole('PROVIDER', 'ADMIN'), async (req, res, next) => {
+  try {
+    const provider = await prisma.provider.findUnique({ where: { userId: req.userId } });
+    if (!provider) return res.json([]);
+    const bookings = await prisma.booking.findMany({
+      where: { providerId: provider.id },
+      include: {
+        service: true,
+        user: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
+        pet: true,
+        review: { select: { id: true } },
+      },
+      orderBy: { scheduledAt: 'desc' },
+    });
+    // Normalize: rename user → customer so the mobile provider UI works
+    res.json(bookings.map(b => ({ ...b, customer: b.user, user: undefined })));
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.get('/me/stats', authMiddleware, attachUser, requireRole('PROVIDER', 'ADMIN'), async (req, res, next) => {
+  try {
+    const provider = await prisma.provider.findUnique({ where: { userId: req.userId } });
+    if (!provider) return res.json({ pendingCount: 0, todayCount: 0, completedCount: 0, revenue: 0 });
+    const bookings = await prisma.booking.findMany({
+      where: { providerId: provider.id },
+      include: { service: { select: { priceKzt: true } } },
+    });
+    const todayStr = new Date().toISOString().slice(0, 10);
+    res.json({
+      pendingCount: bookings.filter(b => b.status === 'PENDING').length,
+      todayCount: bookings.filter(b =>
+        b.scheduledAt?.toISOString().slice(0, 10) === todayStr &&
+        (b.status === 'ACCEPTED' || b.status === 'IN_PROGRESS')
+      ).length,
+      completedCount: bookings.filter(b => b.status === 'COMPLETED').length,
+      revenue: bookings
+        .filter(b => b.status === 'COMPLETED')
+        .reduce((sum, b) => sum + (b.service?.priceKzt || 0), 0),
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
 router.get('/me', authMiddleware, attachUser, requireRole('PROVIDER', 'ADMIN'), async (req, res, next) => {
   try {
     const provider = await prisma.provider.findUnique({ where: { userId: req.userId }, include: { services: true } });

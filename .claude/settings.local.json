@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node prisma/import-providers.js \"../parse.csv\")",
+      "Bash(node -e 'const { PrismaClient } = require\\('\\\\''@prisma/client'\\\\''\\); const p = new PrismaClient\\(\\); p.service.findMany\\({ where: { providerId: '\\\\''cmp2eansq0009hyh3ciqzzle0'\\\\'' } }\\).then\\(s => { console.log\\(JSON.stringify\\(s, null, 2\\)\\); p.$disconnect\\(\\); }\\);')",
+      "Bash(node -e 'const { PrismaClient } = require\\('\\\\''@prisma/client'\\\\''\\); const p = new PrismaClient\\(\\); p.provider.findUnique\\({ where: { id: '\\\\''cmp2eansq0009hyh3ciqzzle0'\\\\'' }, include: { services: true } }\\).then\\(r => { console.log\\(JSON.stringify\\(r, null, 2\\)\\); p.$disconnect\\(\\); }\\);')",
+      "Bash(node -e 'const { PrismaClient } = require\\('\\\\''@prisma/client'\\\\''\\); const p = new PrismaClient\\(\\); p.provider.findMany\\({ take: 5, include: { services: { take: 1 } } }\\).then\\(r => { console.log\\(JSON.stringify\\(r.map\\(pr => \\({ id: pr.id, name: pr.businessName, services: pr.services.length }\\)\\), null, 2\\)\\); p.$disconnect\\(\\); }\\);')",
+      "Bash(docker compose *)"
+    ]
+  }
+}

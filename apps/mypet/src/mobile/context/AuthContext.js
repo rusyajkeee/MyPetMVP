@@ -3,6 +3,7 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import {
   checkApiReachable,
   enterPreviewMode,
+  enterProviderPreviewMode,
   getApiBaseLabel,
   hasLiveApi,
   hydrateSession,
@@ -68,6 +69,12 @@ export function AuthProvider({ children }) {
     return user;
   }
 
+  async function previewProvider() {
+    const user = await enterProviderPreviewMode();
+    setSession({ ready: true, mode: 'demo', user });
+    return user;
+  }
+
   async function logout() {
     await signOut();
     setSession({ ready: true, mode: 'guest', user: null });
@@ -90,6 +97,7 @@ export function AuthProvider({ children }) {
     signIn,
     register,
     preview,
+    previewProvider,
     logout,
     saveProfile,
   };
