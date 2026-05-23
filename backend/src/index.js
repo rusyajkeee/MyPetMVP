@@ -81,16 +81,9 @@ app.use(cors({
 app.use(express.json());
 app.use(requestLogger);
 
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 10000,
-  message: { error: 'Too many requests, please try again later.' },
-});
-
-app.use('/api', limiter);
+// Brute-force protection only on auth endpoints — all other routes are unrestricted
 app.use('/api/auth/login', rateLimit({ windowMs: 15 * 60 * 1000, max: 20 }));
 app.use('/api/auth/register', rateLimit({ windowMs: 60 * 60 * 1000, max: 10 }));
-app.use('/api/bookings', rateLimit({ windowMs: 60 * 1000, max: 60, message: { error: 'Too many booking requests, slow down.' } }));
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
