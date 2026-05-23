@@ -83,15 +83,14 @@ app.use(requestLogger);
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: 10000,
   message: { error: 'Too many requests, please try again later.' },
 });
 
 app.use('/api', limiter);
-app.use('/api/auth/login', rateLimit({ windowMs: 15 * 60 * 1000, max: 10 }));
-app.use('/api/auth/register', rateLimit({ windowMs: 60 * 60 * 1000, max: 5 }));
-// Prevent rapid button-click spam on booking creation / status change
-app.use('/api/bookings', rateLimit({ windowMs: 60 * 1000, max: 20, message: { error: 'Too many booking requests, slow down.' } }));
+app.use('/api/auth/login', rateLimit({ windowMs: 15 * 60 * 1000, max: 20 }));
+app.use('/api/auth/register', rateLimit({ windowMs: 60 * 60 * 1000, max: 10 }));
+app.use('/api/bookings', rateLimit({ windowMs: 60 * 1000, max: 60, message: { error: 'Too many booking requests, slow down.' } }));
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
