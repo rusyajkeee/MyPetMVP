@@ -769,6 +769,11 @@ export async function markApiNotificationsRead(mode) {
   await liveRequest('post', '/notifications/read-all').catch(() => {});
 }
 
+export async function deleteAllApiNotifications(mode) {
+  if (mode !== 'live') return;
+  await liveRequest('delete', '/notifications').catch(() => {});
+}
+
 export async function listProviderServices(mode) {
   if (mode === 'demo') return null;
   try {

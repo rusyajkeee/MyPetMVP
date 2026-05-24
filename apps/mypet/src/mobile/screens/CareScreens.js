@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useLocale, useT, LOCALES } from '../context/LocaleContext';
 import { hapticSuccess, hapticError } from '../lib/haptics';
-import { addPet, fetchApiNotifications, fetchApiUnreadCount, getMedicalCard, getProfile, listBookings, listPets, markApiNotificationsRead, saveMedicalCard, submitReview, updateBookingStatus } from '../lib/api';
+import { addPet, deleteAllApiNotifications, fetchApiNotifications, fetchApiUnreadCount, getMedicalCard, getProfile, listBookings, listPets, markApiNotificationsRead, saveMedicalCard, submitReview, updateBookingStatus } from '../lib/api';
 import { clearNotifications, listNotifications, markAllRead } from '../lib/notifications';
 import { formatDate, formatDateTime, initials, relativeLabel } from '../lib/format';
 import { formatAgeFromBirthDate, validateMedicalCardForm, validatePetForm, validateProfileForm } from '../lib/validation';
@@ -367,7 +367,7 @@ export function NotificationsScreen() {
 
   async function handleClear() {
     if (mode === 'live') {
-      await markApiNotificationsRead(mode);
+      await deleteAllApiNotifications(mode);
       setNotifications([]);
     } else {
       await clearNotifications().catch(() => {});

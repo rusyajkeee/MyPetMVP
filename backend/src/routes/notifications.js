@@ -60,4 +60,19 @@ router.post('/read-all', async (req, res, next) => {
   }
 });
 
+/**
+ * @openapi
+ * /notifications:
+ *   delete:
+ *     summary: Delete all notifications for current user
+ */
+router.delete('/', async (req, res, next) => {
+  try {
+    await prisma.notification.deleteMany({ where: { userId: req.userId } });
+    res.json({ ok: true });
+  } catch (e) {
+    next(e);
+  }
+});
+
 export default router;
