@@ -1,15 +1,14 @@
 FROM node:20-slim AS build
 WORKDIR /app
 
-ARG VITE_API_URL=/api
 ARG EXPO_PUBLIC_API_URL=/api
-ENV VITE_API_URL=$VITE_API_URL
 ENV EXPO_PUBLIC_API_URL=$EXPO_PUBLIC_API_URL
 
 COPY package*.json ./
-RUN npm install --include=dev --legacy-peer-deps
+RUN npm install --legacy-peer-deps
+
 COPY . .
-RUN npm run build
+RUN npx expo export --platform web
 
 FROM nginx:1.27-alpine
 COPY nginx.conf /etc/nginx/conf.d/default.conf
