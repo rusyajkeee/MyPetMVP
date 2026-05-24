@@ -771,7 +771,7 @@ export async function markApiNotificationsRead(mode) {
 
 export async function deleteAllApiNotifications(mode) {
   if (mode !== 'live') return;
-  await liveRequest('delete', '/notifications').catch(() => {});
+  await liveRequest('delete', '/notifications');
 }
 
 export async function listProviderServices(mode) {

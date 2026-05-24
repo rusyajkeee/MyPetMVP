@@ -14,7 +14,7 @@ router.use(authMiddleware, attachUser);
 router.get('/', async (req, res, next) => {
   try {
     const notifications = await prisma.notification.findMany({
-      where: { userId: req.userId },
+      where: { userId: req.userId, read: false },
       orderBy: { createdAt: 'desc' },
       take: 50,
     });
