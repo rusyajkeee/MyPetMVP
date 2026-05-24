@@ -1,8 +1,8 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { useEffect, useRef, useState } from 'react';
-import { Linking, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
-import MapView, { Callout, Marker, UrlTile } from 'react-native-maps';
+import { Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import ProvidersMap from '../components/ProvidersMap';
 
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -188,8 +188,6 @@ export function NearbyServicesScreen({ navigate }) {
   const [topRated, setTopRated] = useState(false);
   const [viewMode, setViewMode] = useState('list');
   const [userCoords, setUserCoords] = useState(ASTANA);
-  const mapRef = useRef(null);
-
   useEffect(() => {
     let active = true;
 
@@ -222,16 +220,6 @@ export function NearbyServicesScreen({ navigate }) {
 
     return () => { active = false; };
   }, [category, radiusKm, topRated]);
-
-  useEffect(() => {
-    if (mapRef.current && viewMode === 'map') {
-      mapRef.current.animateToRegion({
-        ...userCoords,
-        latitudeDelta: radiusKm * 0.018,
-        longitudeDelta: radiusKm * 0.018,
-      }, 600);
-    }
-  }, [userCoords, viewMode]);
 
   const catColor = CATEGORY_COLORS[category] || '#16a34a';
   const activeToggleBg = dark ? '#E6EDF3' : '#111318';
@@ -289,51 +277,17 @@ export function NearbyServicesScreen({ navigate }) {
       </View>
 
       {viewMode === 'map' ? (
-        <View style={styles.mapContainer}>
-          <MapView
-            ref={mapRef}
-            style={styles.map}
-            initialRegion={{ ...userCoords, latitudeDelta: radiusKm * 0.018, longitudeDelta: radiusKm * 0.018 }}
-            showsUserLocation
-            showsMyLocationButton
-          >
-            <UrlTile urlTemplate="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" maximumZ={19} flipY={false} tileSize={256} />
-            {providers.map((provider) =>
-              provider.lat && provider.lng ? (
-                <Marker key={provider.id} coordinate={{ latitude: provider.lat, longitude: provider.lng }} pinColor={catColor}>
-                  <Callout onPress={() => navigate('provider', { providerId: provider.id })} style={styles.callout}>
-                    <Text style={styles.calloutTitle}>{provider.businessName}</Text>
-                    <Text style={styles.calloutAddr}>{provider.address}</Text>
-                    <View style={styles.calloutRow}>
-                      {provider.avgRating ? (
-                        <Text style={styles.calloutRating}>★ {provider.avgRating.toFixed(1)}</Text>
-                      ) : null}
-                      <Text style={styles.calloutDist}>{provider.distanceKm} km</Text>
-                    </View>
-                    {provider.whatsapp ? (
-                      <Pressable onPress={() => Linking.openURL(provider.whatsapp)} style={styles.calloutWa}>
-                        <Text style={styles.calloutWaText}>WhatsApp</Text>
-                      </Pressable>
-                    ) : null}
-                    <Text style={styles.calloutOpen}>{t('nearby_open_profile')}</Text>
-                  </Callout>
-                </Marker>
-              ) : null
-            )}
-          </MapView>
-
-          {loading ? (
-            <View style={styles.mapLoading}>
-              <Text style={styles.mapLoadingText}>{t('nearby_searching')}</Text>
-            </View>
-          ) : null}
-
-          <View style={[styles.mapBadge, { backgroundColor: p.surface }]}>
-            <Text style={[styles.mapBadgeText, { color: p.ink }]}>
-              {loading ? '...' : `${providers.length} ${t('nearby_places_count')}`}
-            </Text>
-          </View>
-        </View>
+        <ProvidersMap
+          providers={providers}
+          userCoords={userCoords}
+          radiusKm={radiusKm}
+          catColor={catColor}
+          loading={loading}
+          onProviderPress={(id) => navigate('provider', { providerId: id })}
+          badge={loading ? '...' : `${providers.length} ${t('nearby_places_count')}`}
+          mapLoadingText={t('nearby_searching')}
+          openProfileText={t('nearby_open_profile')}
+        />
       ) : (
         <>
           <SectionTitle
