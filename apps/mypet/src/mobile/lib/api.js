@@ -535,6 +535,16 @@ export async function toggleFavoriteProvider(mode, providerId, isFavorite) {
   return liveRequest('get', '/users/favorites/ids');
 }
 
+const ALL_DEMO_SLOTS = ['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00'];
+
+export async function getProviderSlots(mode, providerId, date) {
+  if (mode === 'demo') {
+    return ALL_DEMO_SLOTS.map((time) => ({ time, available: true }));
+  }
+  const data = await liveRequest('get', `/providers/${providerId}/slots?date=${date}`);
+  return data.slots;
+}
+
 export async function createBooking(mode, payload) {
   const { _providerSnapshot, ...apiPayload } = payload;
 

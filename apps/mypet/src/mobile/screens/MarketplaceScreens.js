@@ -11,6 +11,7 @@ import {
   createBooking,
   getCategories,
   getProviderDetails,
+  getProviderSlots,
   listBookings,
   listFavoriteProviderIds,
   listNearbyProviders,
@@ -535,6 +536,8 @@ export function BookingScreen({ navigate, route }) {
   });
   const [selectedTime, setSelectedTime] = useState('11:00');
   const [notes, setNotes] = useState('');
+  const [slots, setSlots] = useState([]);
+  const [slotsLoading, setSlotsLoading] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -550,6 +553,24 @@ export function BookingScreen({ navigate, route }) {
     return () => { active = false; };
   }, [mode, providerId]);
 
+  useEffect(() => {
+    if (!providerId || !selectedDay) return;
+    let active = true;
+    setSlotsLoading(true);
+    getProviderSlots(mode, providerId, selectedDay)
+      .then((nextSlots) => {
+        if (!active) return;
+        setSlots(nextSlots);
+        const availableSlot = nextSlots.find((s) => s.available);
+        if (availableSlot && !nextSlots.find((s) => s.time === selectedTime && s.available)) {
+          setSelectedTime(availableSlot.time);
+        }
+      })
+      .catch(() => { if (active) setSlots([]); })
+      .finally(() => { if (active) setSlotsLoading(false); });
+    return () => { active = false; };
+  }, [mode, providerId, selectedDay]);
+
   function handleReview() {
     if (!selectedServiceId) { setError(t('booking_choose_service')); return; }
     setError('');
@@ -561,7 +582,7 @@ export function BookingScreen({ navigate, route }) {
     setSubmitting(true);
     try {
       hapticLight();
-      const scheduledAt = new Date(`${selectedDay}T${selectedTime}:00`).toISOString();
+      const scheduledAt = `${selectedDay}T${selectedTime}:00.000Z`;
       await createBooking(mode, {
         serviceId: selectedServiceId,
         petId: selectedPetId || undefined,
@@ -695,9 +716,23 @@ export function BookingScreen({ navigate, route }) {
 
       <SectionTitle title={t('booking_time')} />
       <View style={styles.pillWrap}>
-        {['09:00', '10:00', '11:00', '13:00', '15:00', '17:00', '18:00', '19:00'].map((time) => (
-          <Pill key={time} label={time} active={selectedTime === time} onPress={() => setSelectedTime(time)} />
-        ))}
+        {slotsLoading ? (
+          <Text style={{ color: p.inkSoft, fontSize: 13, padding: 4 }}>{t('nearby_searching')}</Text>
+        ) : slots.length > 0 ? (
+          slots.map(({ time, available }) => (
+            <Pill
+              key={time}
+              label={time}
+              active={selectedTime === time && available}
+              onPress={available ? () => setSelectedTime(time) : undefined}
+              style={available ? null : { opacity: 0.3 }}
+            />
+          ))
+        ) : (
+          ['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00'].map((time) => (
+            <Pill key={time} label={time} active={selectedTime === time} onPress={() => setSelectedTime(time)} />
+          ))
+        )}
       </View>
 
       {pets.length > 0 ? (

@@ -202,6 +202,35 @@ router.post('/me', authMiddleware, attachUser, requireRole('PROVIDER', 'ADMIN'),
   }
 });
 
+const BOOKING_SLOTS = ['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00'];
+
+router.get('/:id/slots', async (req, res, next) => {
+  try {
+    const { date } = req.query;
+    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return res.status(400).json({ error: 'date query param required (YYYY-MM-DD)' });
+    }
+    const provider = await prisma.provider.findUnique({ where: { id: req.params.id }, select: { id: true } });
+    if (!provider) return res.status(404).json({ error: 'Provider not found' });
+
+    const dayStart = new Date(`${date}T00:00:00.000Z`);
+    const dayEnd = new Date(`${date}T23:59:59.999Z`);
+    const booked = await prisma.booking.findMany({
+      where: {
+        providerId: provider.id,
+        scheduledAt: { gte: dayStart, lte: dayEnd },
+        status: { in: ['PENDING', 'ACCEPTED', 'IN_PROGRESS'] },
+      },
+      select: { scheduledAt: true },
+    });
+
+    const bookedTimes = new Set(booked.map((b) => b.scheduledAt.toISOString().slice(11, 16)));
+    res.json({ slots: BOOKING_SLOTS.map((time) => ({ time, available: !bookedTimes.has(time) })) });
+  } catch (e) {
+    next(e);
+  }
+});
+
 /**
  * @openapi
  * /providers/:id:

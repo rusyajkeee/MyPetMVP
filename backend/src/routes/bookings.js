@@ -39,22 +39,44 @@ router.post('/', authMiddleware, attachUser, requireRole('USER', 'ADMIN'), async
       const pet = await prisma.pet.findFirst({ where: { id: data.petId, ownerId: req.userId } });
       if (!pet) return res.status(400).json({ error: 'Pet not found' });
     }
-    const booking = await prisma.booking.create({
-      data: {
-        userId: req.userId,
-        providerId: service.providerId,
-        serviceId: service.id,
-        petId: data.petId,
-        scheduledAt,
-        notes: data.notes,
-        status: 'PENDING',
-      },
-      include: {
-        service: true,
-        provider: { include: { user: { select: { firstName: true, lastName: true } } } },
-        pet: true,
-      },
-    });
+    let booking;
+    try {
+      booking = await prisma.$transaction(async (tx) => {
+        const conflict = await tx.booking.findFirst({
+          where: {
+            providerId: service.providerId,
+            scheduledAt,
+            status: { in: ['PENDING', 'ACCEPTED', 'IN_PROGRESS'] },
+          },
+        });
+        if (conflict) {
+          const err = new Error('SLOT_TAKEN');
+          err.status = 409;
+          throw err;
+        }
+        return tx.booking.create({
+          data: {
+            userId: req.userId,
+            providerId: service.providerId,
+            serviceId: service.id,
+            petId: data.petId,
+            scheduledAt,
+            notes: data.notes,
+            status: 'PENDING',
+          },
+          include: {
+            service: true,
+            provider: { include: { user: { select: { firstName: true, lastName: true } } } },
+            pet: true,
+          },
+        });
+      }, { isolationLevel: 'Serializable' });
+    } catch (e) {
+      if (e.message === 'SLOT_TAKEN') {
+        return res.status(409).json({ error: 'This time slot is already booked. Please choose another time.' });
+      }
+      throw e;
+    }
     // Notify provider
     await prisma.notification.create({
       data: {

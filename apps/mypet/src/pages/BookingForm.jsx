@@ -3,12 +3,6 @@ import { Link, useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../api/client';
 
-const TIME_SLOTS = ['09:00', '10:00', '11:00', '12:00', '14:00', '15:00', '16:00', '17:00'];
-
-function toISO(date) {
-  return date.toISOString().slice(0, 16);
-}
-
 export default function BookingForm() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -24,6 +18,8 @@ export default function BookingForm() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [slots, setSlots] = useState([]);
+  const [slotsLoading, setSlotsLoading] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -44,6 +40,21 @@ export default function BookingForm() {
       .catch(() => setProvider(null))
       .finally(() => setLoading(false));
   }, [id, user]);
+
+  useEffect(() => {
+    if (!datePart || !id) return;
+    setSlotsLoading(true);
+    api.get(`/providers/${id}/slots?date=${datePart}`)
+      .then((r) => {
+        setSlots(r.data.slots);
+        const available = r.data.slots.filter((s) => s.available);
+        if (available.length && !r.data.slots.find((s) => s.time === timePart && s.available)) {
+          setTimePart(available[0].time);
+        }
+      })
+      .catch(() => setSlots([]))
+      .finally(() => setSlotsLoading(false));
+  }, [datePart, id]);
 
   if (!user) {
     return (
@@ -68,7 +79,7 @@ export default function BookingForm() {
     if (!datePart) { setError('Please select a date.'); return; }
     setSubmitting(true);
     try {
-      const scheduledAt = new Date(`${datePart}T${timePart}:00`).toISOString();
+      const scheduledAt = `${datePart}T${timePart}:00.000Z`;
       await api.post('/bookings', {
         serviceId,
         petId: petId || undefined,
@@ -136,22 +147,32 @@ export default function BookingForm() {
         {/* Time slots */}
         <div className="bg-white rounded-2xl shadow-sm p-4">
           <label className="block text-sm font-bold text-gray-700 mb-3">⏰ Pick a Time</label>
-          <div className="grid grid-cols-4 gap-2">
-            {TIME_SLOTS.map((t) => (
-              <button
-                key={t}
-                type="button"
-                onClick={() => setTimePart(t)}
-                className={`py-2.5 rounded-xl text-sm font-semibold transition ${
-                  timePart === t
-                    ? 'bg-mypet-green text-white shadow-md shadow-green-200'
-                    : 'bg-gray-50 text-gray-600 border border-gray-200 hover:border-mypet-green'
-                }`}
-              >
-                {t}
-              </button>
-            ))}
-          </div>
+          {slotsLoading ? (
+            <p className="text-sm text-gray-400 text-center py-2">Loading available times...</p>
+          ) : (
+            <div className="grid grid-cols-4 gap-2">
+              {(slots.length > 0
+                ? slots
+                : ['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00'].map((time) => ({ time, available: true }))
+              ).map(({ time, available }) => (
+                <button
+                  key={time}
+                  type="button"
+                  disabled={!available}
+                  onClick={() => available && setTimePart(time)}
+                  className={`py-2.5 rounded-xl text-sm font-semibold transition ${
+                    !available
+                      ? 'bg-gray-100 text-gray-300 border border-gray-100 cursor-not-allowed line-through'
+                      : timePart === time
+                      ? 'bg-mypet-green text-white shadow-md shadow-green-200'
+                      : 'bg-gray-50 text-gray-600 border border-gray-200 hover:border-mypet-green'
+                  }`}
+                >
+                  {time}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Pet selector */}
