@@ -720,7 +720,7 @@ const styles = StyleSheet.create({
   screenContent: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.lg,
-    paddingBottom: spacing.xxl,
+    paddingBottom: 110,
     gap: spacing.lg,
   },
   screenContentWithFooter: {

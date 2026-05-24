@@ -1147,6 +1147,7 @@ const styles = StyleSheet.create({
   preferenceRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
     paddingVertical: spacing.sm,
     borderBottomWidth: 1,
@@ -1156,11 +1157,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+    flex: 1,
+    minWidth: 100,
   },
   preferenceLabel: {
     fontSize: 15,
     fontWeight: '600',
     fontFamily: typography.body,
+    flexShrink: 1,
   },
   langRow: {
     flexDirection: 'row',
