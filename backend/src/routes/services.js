@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { authMiddleware, attachUser, requireRole } from '../middleware/auth.js';
+import { matchCategories } from '../lib/categorySearch.js';
 
 const router = Router();
 const categoryEnum = z.enum(['VETERINARY', 'GROOMING', 'BOARDING', 'WALKING', 'TRANSPORT']);
@@ -29,12 +30,16 @@ router.get('/search', async (req, res, next) => {
     const lat = req.query.lat ? parseFloat(req.query.lat) : null;
     const lng = req.query.lng ? parseFloat(req.query.lng) : null;
 
+    // Synonym/keyword matching: "стрижка" → GROOMING, "прогулка" → WALKING, etc.
+    const matchedCategories = matchCategories(q);
+
     const services = await prisma.service.findMany({
       where: {
         provider: { OR: [{ verified: true }, { isVerified: true }] },
         OR: [
           { title: { contains: q, mode: 'insensitive' } },
           { description: { contains: q, mode: 'insensitive' } },
+          ...(matchedCategories.length > 0 ? [{ category: { in: matchedCategories } }] : []),
         ],
       },
       include: {
