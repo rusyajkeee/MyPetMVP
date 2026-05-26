@@ -440,16 +440,6 @@ export function ProviderProfileScreen() {
         <PrimaryButton label={t('profile_save')} icon="content-save-outline" onPress={handleSave} />
       </GlassCard>
 
-      <GlassCard style={styles.formPanel}>
-        <SectionTitle title="Appearance" />
-        <View style={[styles.preferenceRow, { borderBottomColor: p.line }]}>
-          <View style={styles.preferenceLeft}>
-            <Text style={[styles.preferenceLabel, { color: p.ink }]}>{t('profile_dark_mode')}</Text>
-          </View>
-          <ThemeToggle />
-        </View>
-      </GlassCard>
-
       <SecondaryButton label={t('provider_switch_customer')} icon="account-switch-outline" onPress={handleSwitchToCustomer} />
       <SecondaryButton label={t('profile_sign_out')} icon="logout" onPress={logout} />
     </Screen>

@@ -188,7 +188,7 @@ export function RegisterScreen({ navigate }) {
   const { register, apiConfigured, apiReachable } = useAuth();
   const t = useT();
   const [form, setForm] = useState({
-    firstName: '', lastName: '', email: '', phone: '', password: '',
+    firstName: '', lastName: '', email: '', phone: '', password: '', confirmPassword: '',
   });
   const [tosAccepted, setTosAccepted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -205,7 +205,8 @@ export function RegisterScreen({ navigate }) {
     setSubmitting(true);
     try {
       hapticLight();
-      await register({ ...form, role: 'USER', tosAccepted: true });
+      const { confirmPassword, ...payload } = form;
+      await register({ ...payload, role: 'USER', tosAccepted: true });
     } catch (currentError) {
       setError(currentError.message || 'Registration failed');
     } finally {
@@ -228,16 +229,17 @@ export function RegisterScreen({ navigate }) {
 
           <View style={styles.row}>
             <View style={styles.rowCell}>
-              <Field label={t('auth_first_name')} value={form.firstName} onChangeText={(v) => setField('firstName', v)} placeholder="Aruzhan" />
+              <Field label={t('auth_first_name')} value={form.firstName} onChangeText={(v) => setField('firstName', v)} placeholder="Aruzhan" autoCapitalize="words" />
             </View>
             <View style={styles.rowCell}>
-              <Field label={t('auth_last_name')} value={form.lastName} onChangeText={(v) => setField('lastName', v)} placeholder="Bektas" />
+              <Field label={t('auth_last_name')} value={form.lastName} onChangeText={(v) => setField('lastName', v)} placeholder="Bektas" autoCapitalize="words" />
             </View>
           </View>
 
           <Field label={t('auth_email')} value={form.email} onChangeText={(v) => setField('email', v)} placeholder="owner@example.com" keyboardType="email-address" autoCapitalize="none" />
           <Field label={t('auth_phone')} value={form.phone} onChangeText={(v) => setField('phone', v)} placeholder="+7 777 000 0000" keyboardType="phone-pad" autoCapitalize="none" />
-          <Field label={t('auth_password')} value={form.password} onChangeText={(v) => setField('password', v)} placeholder={t('auth_password')} secureTextEntry autoCapitalize="none" />
+          <Field label={t('auth_password')} value={form.password} onChangeText={(v) => setField('password', v)} placeholder="Min 8 chars, 1 uppercase, 1 digit" secureTextEntry autoCapitalize="none" />
+          <Field label={t('auth_confirm_password')} value={form.confirmPassword} onChangeText={(v) => setField('confirmPassword', v)} placeholder={t('auth_confirm_password')} secureTextEntry autoCapitalize="none" />
 
           <Pressable onPress={() => setTosAccepted((c) => !c)} style={styles.checkRow}>
             <View style={[styles.checkBox, tosAccepted ? styles.checkBoxActive : null]}>

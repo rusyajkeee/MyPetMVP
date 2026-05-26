@@ -786,13 +786,6 @@ export function ProfileScreen() {
 
       <GlassCard style={styles.formPanel}>
         <SectionTitle title="Appearance" />
-        <View style={[styles.preferenceRow, { borderBottomColor: p.line }]}>
-          <View style={styles.preferenceLeft}>
-            <MaterialCommunityIcons name="weather-night" size={18} color={p.ink} />
-            <Text style={[styles.preferenceLabel, { color: p.ink }]}>{t('profile_dark_mode')}</Text>
-          </View>
-          <ThemeToggle />
-        </View>
         <LanguagePicker />
       </GlassCard>
     </Screen>

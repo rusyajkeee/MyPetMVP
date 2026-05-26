@@ -8,7 +8,15 @@ export function isValidEmail(value) {
 
 export function isValidPhone(value) {
   const digits = String(value || '').replace(/\D/g, '');
-  return digits.length >= 10;
+  return digits.length >= 10 && digits.length <= 12;
+}
+
+export function isValidName(value) {
+  return /^[a-zA-Zа-яА-ЯёЁ'\-\s]{2,}$/.test(String(value || '').trim());
+}
+
+export function isStrongPassword(value) {
+  return value.length >= 8 && /[A-Z]/.test(value) && /\d/.test(value);
 }
 
 export function isValidDateFieldValue(value) {
@@ -59,14 +67,19 @@ export function validateLoginForm({ email, password }) {
 
 export function validateRegisterForm(form, tosAccepted) {
   if (!form.firstName.trim()) return 'Enter first name.';
+  if (!isValidName(form.firstName)) return 'First name must contain letters only (min 2 characters).';
   if (!form.lastName.trim()) return 'Enter last name.';
+  if (!isValidName(form.lastName)) return 'Last name must contain letters only (min 2 characters).';
   if (!form.email.trim()) return 'Enter email.';
-  if (!isValidEmail(form.email)) return 'Enter a valid email.';
-  if (!form.phone.trim()) return 'Enter phone.';
-  if (!isValidPhone(form.phone)) return 'Enter a valid phone.';
+  if (!isValidEmail(form.email)) return 'Enter a valid email address.';
+  if (!form.phone.trim()) return 'Enter phone number.';
+  if (!isValidPhone(form.phone)) return 'Phone must be 10–12 digits (e.g. +7 777 000 0000).';
   if (!form.password) return 'Enter password.';
   if (form.password.length < 8) return 'Password must be at least 8 characters.';
-  if (!tosAccepted) return 'Accept terms.';
+  if (!/[A-Z]/.test(form.password)) return 'Password must contain at least one uppercase letter.';
+  if (!/\d/.test(form.password)) return 'Password must contain at least one digit.';
+  if (form.confirmPassword !== undefined && form.password !== form.confirmPassword) return 'Passwords do not match.';
+  if (!tosAccepted) return 'You must accept the Terms of Service.';
   return '';
 }
 
