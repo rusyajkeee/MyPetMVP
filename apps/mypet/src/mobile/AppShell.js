@@ -39,6 +39,65 @@ function makeRoute(name, params = {}) {
   return { name, params };
 }
 
+// ─── URL sync helpers ─────────────────────────────────────────────────────────
+
+const SCREEN_PATHS = {
+  home:              '/',
+  welcome:           '/',
+  login:             '/login',
+  register:          '/register',
+  discover:          '/discover',
+  nearby:            '/nearby',
+  bookings:          '/bookings',
+  pets:              '/pets',
+  profile:           '/profile',
+  notifications:     '/notifications',
+  providerDashboard: '/dashboard',
+  providerInbox:     '/inbox',
+  providerServices:  '/my-services',
+  providerProfile:   '/provider-profile',
+  provider:  (p) => `/provider/${p?.id || ''}`,
+  booking:   (p) => `/booking/${p?.providerId || ''}`,
+  petDetails:(p) => `/pets/${p?.petId || ''}`,
+  medical:   (p) => `/pets/${p?.petId || ''}/medical`,
+};
+
+const PATH_TO_SCREEN = {
+  '/login':           'login',
+  '/register':        'register',
+  '/discover':        'discover',
+  '/nearby':          'nearby',
+  '/bookings':        'bookings',
+  '/pets':            'pets',
+  '/profile':         'profile',
+  '/notifications':   'notifications',
+  '/dashboard':       'providerDashboard',
+  '/inbox':           'providerInbox',
+  '/my-services':     'providerServices',
+  '/provider-profile':'providerProfile',
+};
+
+function getScreenPath(name, params) {
+  const p = SCREEN_PATHS[name];
+  if (!p) return null;
+  return typeof p === 'function' ? p(params) : p;
+}
+
+function pushHistoryState(name, params) {
+  if (typeof window === 'undefined') return;
+  const path = getScreenPath(name, params);
+  if (path) window.history.pushState({ name, params }, '', path);
+}
+
+function getInitialRouteFromUrl() {
+  if (typeof window === 'undefined') return null;
+  const path = window.location.pathname;
+  if (PATH_TO_SCREEN[path]) return makeRoute(PATH_TO_SCREEN[path]);
+  const providerMatch = path.match(/^\/provider\/(.+)$/);
+  if (providerMatch) return makeRoute('provider', { id: providerMatch[1] });
+  return null;
+}
+
 export function AppShell() {
   const { ready, user, mode } = useAuth();
   const { dark, palette: p } = useTheme();
@@ -65,7 +124,10 @@ export function AppShell() {
   const rootTabKeys = new Set((isProvider ? PROVIDER_TABS : USER_TABS).map((t) => t.key));
   const defaultRoot = isProvider ? 'providerDashboard' : 'home';
 
-  const [stack, setStack] = useState([makeRoute('welcome')]);
+  const [stack, setStack] = useState(() => {
+    const fromUrl = getInitialRouteFromUrl();
+    return [fromUrl || makeRoute('welcome')];
+  });
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [toast, setToast] = useState(null);
@@ -165,16 +227,35 @@ export function AppShell() {
     };
   }, [mode, isProvider]);
 
+  // Sync browser URL with screen changes (web only)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    function handlePopState(e) {
+      if (e.state?.name) {
+        setStack([makeRoute(e.state.name, e.state.params || {})]);
+      }
+    }
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
   function navigate(name, params = {}) {
     setStack((s) => [...s, makeRoute(name, params)]);
+    pushHistoryState(name, params);
   }
 
   function resetTo(name, params = {}) {
     setStack([makeRoute(name, params)]);
+    pushHistoryState(name, params);
   }
 
   function goBack() {
-    setStack((s) => (s.length > 1 ? s.slice(0, -1) : s));
+    setStack((s) => {
+      if (s.length <= 1) return s;
+      const prev = s[s.length - 2];
+      pushHistoryState(prev.name, prev.params);
+      return s.slice(0, -1);
+    });
   }
 
   const route = stack[stack.length - 1];
