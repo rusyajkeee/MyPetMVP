@@ -7,6 +7,85 @@ const router = Router();
 const categoryEnum = z.enum(['VETERINARY', 'GROOMING', 'BOARDING', 'WALKING', 'TRANSPORT']);
 const AUTO_VERIFY_PROVIDERS = process.env.AUTO_VERIFY_PROVIDERS === 'true';
 
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+/**
+ * @openapi
+ * /services/search:
+ *   get:
+ *     summary: Search services by name/description, returns services with provider info
+ */
+router.get('/search', async (req, res, next) => {
+  try {
+    const q = (req.query.q || '').trim();
+    if (q.length < 2) return res.json([]);
+
+    const lat = req.query.lat ? parseFloat(req.query.lat) : null;
+    const lng = req.query.lng ? parseFloat(req.query.lng) : null;
+
+    const services = await prisma.service.findMany({
+      where: {
+        provider: { OR: [{ verified: true }, { isVerified: true }] },
+        OR: [
+          { title: { contains: q, mode: 'insensitive' } },
+          { description: { contains: q, mode: 'insensitive' } },
+        ],
+      },
+      include: {
+        provider: {
+          include: {
+            user: { select: { firstName: true, lastName: true } },
+            reviews: { select: { rating: true } },
+          },
+        },
+      },
+      take: 30,
+    });
+
+    const results = services.map((s) => {
+      const avgRating = s.provider.reviews.length
+        ? s.provider.reviews.reduce((sum, r) => sum + r.rating, 0) / s.provider.reviews.length
+        : null;
+      let distanceKm = null;
+      if (lat && lng && s.provider.latitude && s.provider.longitude) {
+        distanceKm = parseFloat(haversineKm(lat, lng, s.provider.latitude, s.provider.longitude).toFixed(1));
+      }
+      return {
+        id: s.id,
+        title: s.title,
+        description: s.description,
+        priceKzt: s.priceKzt,
+        durationMin: s.durationMin,
+        category: s.category,
+        provider: {
+          id: s.provider.id,
+          businessName: s.provider.businessName,
+          address: s.provider.address,
+          avgRating: avgRating ? parseFloat(avgRating.toFixed(1)) : null,
+          reviewCount: s.provider.reviews.length,
+          distanceKm,
+        },
+      };
+    });
+
+    results.sort((a, b) =>
+      lat && lng
+        ? (a.provider.distanceKm ?? 9999) - (b.provider.distanceKm ?? 9999)
+        : (b.provider.avgRating ?? 0) - (a.provider.avgRating ?? 0)
+    );
+
+    res.json(results);
+  } catch (e) {
+    next(e);
+  }
+});
+
 /**
  * @openapi
  * /services:

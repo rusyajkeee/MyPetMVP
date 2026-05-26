@@ -1,7 +1,7 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native';
 import ProvidersMap from '../components/ProvidersMap';
 
 import { useAuth } from '../context/AuthContext';
@@ -17,6 +17,7 @@ import {
   listNearbyProviders,
   listPets,
   listProviders,
+  searchServices,
   toggleFavoriteProvider,
 } from '../lib/api';
 import { formatDate, formatDateTime, formatMoney, relativeLabel } from '../lib/format';
@@ -314,6 +315,45 @@ export function NearbyServicesScreen({ navigate }) {
 
 // ─── DiscoverScreen ───────────────────────────────────────────────────────────
 
+function ServiceSearchItem({ item, onPress, p, t }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [styles.serviceCard, { backgroundColor: p.surface, borderColor: p.line }, pressed ? styles.pressed : null]}
+    >
+      <View style={styles.serviceCardTop}>
+        <Text style={[styles.serviceCardTitle, { color: p.ink }]} numberOfLines={1}>{item.title}</Text>
+        {item.priceKzt ? (
+          <Text style={[styles.serviceCardPrice, { color: p.accent }]}>{item.priceKzt.toLocaleString()} ₸</Text>
+        ) : null}
+      </View>
+      <Text style={[styles.serviceCardProvider, { color: p.inkSoft }]} numberOfLines={1}>
+        {t('search_at')} {item.provider.businessName}
+      </Text>
+      <View style={styles.serviceCardMeta}>
+        {item.provider.avgRating ? (
+          <View style={styles.serviceCardMetaItem}>
+            <MaterialCommunityIcons name="star" size={13} color="#F2A93B" />
+            <Text style={[styles.serviceCardMetaText, { color: p.inkSoft }]}>{item.provider.avgRating.toFixed(1)}</Text>
+          </View>
+        ) : null}
+        {item.provider.distanceKm != null ? (
+          <View style={styles.serviceCardMetaItem}>
+            <MaterialCommunityIcons name="map-marker-outline" size={13} color={p.inkSoft} />
+            <Text style={[styles.serviceCardMetaText, { color: p.inkSoft }]}>{item.provider.distanceKm} km</Text>
+          </View>
+        ) : null}
+        {item.durationMin ? (
+          <View style={styles.serviceCardMetaItem}>
+            <MaterialCommunityIcons name="clock-outline" size={13} color={p.inkSoft} />
+            <Text style={[styles.serviceCardMetaText, { color: p.inkSoft }]}>{item.durationMin} min</Text>
+          </View>
+        ) : null}
+      </View>
+    </Pressable>
+  );
+}
+
 export function DiscoverScreen({ navigate, route }) {
   const { mode } = useAuth();
   const { palette: p } = useTheme();
@@ -325,6 +365,10 @@ export function DiscoverScreen({ navigate, route }) {
   const [favoriteIds, setFavoriteIds] = useState(new Set());
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const searchTimer = useRef(null);
 
   function load(isRefresh = false) {
     if (isRefresh) setRefreshing(true);
@@ -340,6 +384,18 @@ export function DiscoverScreen({ navigate, route }) {
 
   useEffect(() => { load(); }, [mode]);
 
+  function handleSearchChange(text) {
+    setSearchQuery(text);
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    if (text.trim().length < 2) { setSearchResults([]); setSearching(false); return; }
+    setSearching(true);
+    searchTimer.current = setTimeout(async () => {
+      const results = await searchServices(mode, text.trim(), null);
+      setSearchResults(results);
+      setSearching(false);
+    }, 400);
+  }
+
   function toggleCategory(slug) {
     setSelectedCats((prev) => {
       const next = new Set(prev);
@@ -349,6 +405,8 @@ export function DiscoverScreen({ navigate, route }) {
     });
   }
 
+  const isSearching = searchQuery.trim().length >= 2;
+
   const providers = allProviders.filter((prov) => {
     if (showFavorites && !favoriteIds.has(prov.id)) return false;
     if (selectedCats.size > 0 && !selectedCats.has(prov.category)) return false;
@@ -356,39 +414,85 @@ export function DiscoverScreen({ navigate, route }) {
   });
 
   return (
-    <Screen refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={p.ink} />}>
+    <Screen refreshControl={!isSearching ? <RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={p.ink} /> : undefined}>
       <HeroTitle eyebrow={t('discover_eyebrow')} title={t('discover_find')} />
 
-      <View style={styles.pillWrap}>
-        {getCategories().map((item) => (
-          <Pill
-            key={item.slug}
-            label={t(`cat_${item.slug.toLowerCase()}`)}
-            icon={item.icon}
-            active={selectedCats.has(item.slug)}
-            onPress={() => toggleCategory(item.slug)}
-          />
-        ))}
-        <Pill
-          label={t('discover_favorites')}
-          icon={showFavorites ? 'heart' : 'heart-outline'}
-          active={showFavorites}
-          onPress={() => setShowFavorites((v) => !v)}
+      {/* Search bar */}
+      <View style={[styles.searchBar, { backgroundColor: p.surface, borderColor: p.line }]}>
+        <MaterialCommunityIcons name="magnify" size={20} color={p.inkSoft} />
+        <TextInput
+          style={[styles.searchInput, { color: p.ink }]}
+          placeholder={t('search_placeholder')}
+          placeholderTextColor={p.inkSoft}
+          value={searchQuery}
+          onChangeText={handleSearchChange}
+          returnKeyType="search"
+          autoCapitalize="none"
+          autoCorrect={false}
         />
+        {searchQuery.length > 0 ? (
+          <Pressable onPress={() => { setSearchQuery(''); setSearchResults([]); }}>
+            <MaterialCommunityIcons name="close-circle" size={18} color={p.inkSoft} />
+          </Pressable>
+        ) : null}
       </View>
 
-      <SectionTitle title={t('discover_results')} subtitle={loading ? t('loading') : `${providers.length}`} />
-
-      {providers.length === 0 && !loading ? (
-        <EmptyState icon="map-search-outline" title={t('discover_empty')} subtitle={t('discover_empty_sub')} />
-      ) : (
-        providers.map((provider) => (
-          <ProviderListItem
-            key={provider.id}
-            provider={provider}
-            onPress={() => navigate('provider', { providerId: provider.id })}
+      {isSearching ? (
+        <>
+          <SectionTitle
+            title={t('search_results')}
+            subtitle={searching ? t('loading') : `${searchResults.length}`}
           />
-        ))
+          {searching ? (
+            <SkeletonCard />
+          ) : searchResults.length === 0 ? (
+            <EmptyState icon="magnify-close" title={t('search_empty')} subtitle={t('search_empty_sub')} />
+          ) : (
+            searchResults.map((item) => (
+              <ServiceSearchItem
+                key={item.id}
+                item={item}
+                p={p}
+                t={t}
+                onPress={() => navigate('provider', { providerId: item.provider.id })}
+              />
+            ))
+          )}
+        </>
+      ) : (
+        <>
+          <View style={styles.pillWrap}>
+            {getCategories().map((item) => (
+              <Pill
+                key={item.slug}
+                label={t(`cat_${item.slug.toLowerCase()}`)}
+                icon={item.icon}
+                active={selectedCats.has(item.slug)}
+                onPress={() => toggleCategory(item.slug)}
+              />
+            ))}
+            <Pill
+              label={t('discover_favorites')}
+              icon={showFavorites ? 'heart' : 'heart-outline'}
+              active={showFavorites}
+              onPress={() => setShowFavorites((v) => !v)}
+            />
+          </View>
+
+          <SectionTitle title={t('discover_results')} subtitle={loading ? t('loading') : `${providers.length}`} />
+
+          {providers.length === 0 && !loading ? (
+            <EmptyState icon="map-search-outline" title={t('discover_empty')} subtitle={t('discover_empty_sub')} />
+          ) : (
+            providers.map((provider) => (
+              <ProviderListItem
+                key={provider.id}
+                provider={provider}
+                onPress={() => navigate('provider', { providerId: provider.id })}
+              />
+            ))
+          )}
+        </>
       )}
     </Screen>
   );
@@ -862,6 +966,64 @@ function dayOptions(t) {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: 1,
+    borderRadius: radius.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
+    fontFamily: typography.body,
+    paddingVertical: 0,
+  },
+  serviceCard: {
+    borderWidth: 1,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    gap: 4,
+  },
+  serviceCardTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 8,
+  },
+  serviceCardTitle: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '700',
+    fontFamily: typography.body,
+  },
+  serviceCardPrice: {
+    fontSize: 14,
+    fontWeight: '700',
+    fontFamily: typography.body,
+  },
+  serviceCardProvider: {
+    fontSize: 13,
+    fontFamily: typography.body,
+  },
+  serviceCardMeta: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 4,
+  },
+  serviceCardMetaItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  serviceCardMetaText: {
+    fontSize: 12,
+    fontFamily: typography.body,
+  },
   viewToggle: {
     flexDirection: 'row',
     borderRadius: 12,

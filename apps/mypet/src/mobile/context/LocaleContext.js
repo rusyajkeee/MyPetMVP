@@ -27,6 +27,13 @@ const STRINGS = {
     auth_creating: 'Creating…',
     auth_back_to_login: 'Back to login',
 
+    // Search
+    search_placeholder: 'Search for a service…',
+    search_results: 'Results',
+    search_empty: 'Nothing found',
+    search_empty_sub: 'Try different keywords',
+    search_at: 'at',
+
     // Tabs
     tab_home: 'Home',
     tab_discover: 'Discover',
@@ -280,6 +287,12 @@ const STRINGS = {
     auth_creating: 'Создание…',
     auth_back_to_login: 'Назад ко входу',
 
+    search_placeholder: 'Поиск услуги…',
+    search_results: 'Результаты',
+    search_empty: 'Ничего не найдено',
+    search_empty_sub: 'Попробуйте другой запрос',
+    search_at: 'у',
+
     tab_home: 'Главная',
     tab_discover: 'Найти',
     tab_bookings: 'Записи',
@@ -522,6 +535,12 @@ const STRINGS = {
     auth_accept_terms: 'Шарттарды қабылдаңыз',
     auth_creating: 'Жасалуда…',
     auth_back_to_login: 'Кіруге оралу',
+
+    search_placeholder: 'Қызмет іздеу…',
+    search_results: 'Нәтижелер',
+    search_empty: 'Ештеңе табылмады',
+    search_empty_sub: 'Басқа сұраныс енгізіп көріңіз',
+    search_at: '',
 
     tab_home: 'Басты',
     tab_discover: 'Іздеу',

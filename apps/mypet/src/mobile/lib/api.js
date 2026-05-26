@@ -535,6 +535,19 @@ export async function toggleFavoriteProvider(mode, providerId, isFavorite) {
   return liveRequest('get', '/users/favorites/ids');
 }
 
+export async function searchServices(mode, query, coords) {
+  if (!query || query.trim().length < 2) return [];
+  if (mode === 'demo') return [];
+  try {
+    const params = new URLSearchParams({ q: query.trim() });
+    if (coords?.latitude) params.set('lat', String(coords.latitude));
+    if (coords?.longitude) params.set('lng', String(coords.longitude));
+    return await liveRequest('get', `/services/search?${params.toString()}`);
+  } catch {
+    return [];
+  }
+}
+
 const ALL_DEMO_SLOTS = ['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00'];
 
 export async function getProviderSlots(mode, providerId, date) {
