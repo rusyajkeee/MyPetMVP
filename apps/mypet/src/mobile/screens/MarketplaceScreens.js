@@ -20,7 +20,7 @@ import {
   searchServices,
   toggleFavoriteProvider,
 } from '../lib/api';
-import { formatDate, formatDateTime, formatMoney, relativeLabel } from '../lib/format';
+import { formatDate, formatDateTime, formatDuration, formatMoney, relativeLabel } from '../lib/format';
 import { hapticLight, hapticSelection } from '../lib/haptics';
 import {
   AvatarBadge,
@@ -360,7 +360,7 @@ function ServiceSearchItem({ item, onPress, p, t }) {
         {item.durationMin ? (
           <View style={styles.serviceCardMetaItem}>
             <MaterialCommunityIcons name="clock-outline" size={13} color={p.inkSoft} />
-            <Text style={[styles.serviceCardMetaText, { color: p.inkSoft }]}>{item.durationMin} min</Text>
+            <Text style={[styles.serviceCardMetaText, { color: p.inkSoft }]}>{formatDuration(item.durationMin)}</Text>
           </View>
         ) : null}
       </View>
@@ -603,7 +603,7 @@ export function ProviderScreen({ navigate, route }) {
           <View style={styles.serviceCopy}>
             <Text style={[styles.serviceTitle, { color: p.ink }]}>{service.title}</Text>
             <Text style={[styles.serviceMeta, { color: p.inkSoft }]}>
-              {service.durationMin ? `${service.durationMin} ${t('provider_min')}` : t('provider_open')}
+              {service.durationMin ? formatDuration(service.durationMin) : t('provider_open')}
             </Text>
           </View>
           <Text style={[styles.servicePrice, { color: p.ink }]}>{formatMoney(service.priceKzt)}</Text>
@@ -771,7 +771,7 @@ export function BookingScreen({ navigate, route }) {
             <SummaryRow icon="cash-outline" label={t('booking_price_label')} value={formatMoney(selectedService.priceKzt)} />
           ) : null}
           {selectedService?.durationMin ? (
-            <SummaryRow icon="clock-outline" label={t('booking_duration_label')} value={`${selectedService.durationMin} ${t('provider_min')}`} />
+            <SummaryRow icon="clock-outline" label={t('booking_duration_label')} value={formatDuration(selectedService.durationMin)} />
           ) : null}
           <SummaryRow icon="calendar-outline" label={t('booking_date_label')} value={`${dayLabel} ${selectedTime}`} />
           {selectedPet ? (
@@ -816,7 +816,7 @@ export function BookingScreen({ navigate, route }) {
               <View style={styles.optionCopy}>
                 <Text style={[styles.optionTitle, { color: p.ink }]}>{service.title}</Text>
                 <Text style={[styles.optionMeta, { color: p.inkSoft }]}>
-                  {formatMoney(service.priceKzt)}{service.durationMin ? ` · ${service.durationMin} ${t('provider_min')}` : ''}
+                  {formatMoney(service.priceKzt)}{service.durationMin ? ` · ${formatDuration(service.durationMin)}` : ''}
                 </Text>
               </View>
               <View style={[styles.optionBullet, { borderColor: active ? p.ink : p.line, backgroundColor: active ? p.ink : 'transparent' }]} />

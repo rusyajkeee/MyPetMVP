@@ -26,6 +26,15 @@ export function initials(user) {
   return `${user?.firstName?.[0] || ''}${user?.lastName?.[0] || ''}`.trim().toUpperCase() || 'MP';
 }
 
+export function formatDuration(minutes) {
+  if (!minutes) return null;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (h === 0) return `${m} мин`;
+  if (m === 0) return `${h} ч`;
+  return `${h} ч ${m} мин`;
+}
+
 export function relativeLabel(status) {
   const map = {
     PENDING: 'Pending approval',

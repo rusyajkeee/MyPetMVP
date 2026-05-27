@@ -3,6 +3,15 @@ import { Link, useParams, useNavigate } from 'react-router-dom';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 
+function formatDuration(minutes) {
+  if (!minutes) return null;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (h === 0) return `${m} мин`;
+  if (m === 0) return `${h} ч`;
+  return `${h} ч ${m} мин`;
+}
+
 const CATEGORIES = [
   { slug: 'VETERINARY', label: 'Veterinary', emoji: '🩺' },
   { slug: 'GROOMING', label: 'Grooming', emoji: '✂️' },
@@ -67,7 +76,7 @@ function ServiceCard({ item }) {
               <span className="text-xs text-gray-400">📍 {item.provider.distanceKm} km</span>
             )}
             {item.durationMin && (
-              <span className="text-xs text-gray-400">⏱ {item.durationMin} min</span>
+              <span className="text-xs text-gray-400">⏱ {formatDuration(item.durationMin)}</span>
             )}
           </div>
         </div>

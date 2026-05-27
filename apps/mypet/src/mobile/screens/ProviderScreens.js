@@ -13,7 +13,7 @@ import {
   updateProviderBookingStatus,
   updateProviderService,
 } from '../lib/api';
-import { formatDateTime, formatMoney, relativeLabel } from '../lib/format';
+import { formatDateTime, formatDuration, formatMoney, relativeLabel } from '../lib/format';
 import {
   AvatarBadge,
   EmptyState,
@@ -324,7 +324,7 @@ export function ProviderServicesScreen() {
           <View style={styles.serviceTop}>
             <View style={styles.serviceCopy}>
               <Text style={styles.serviceTitle}>{svc.title}</Text>
-              <Text style={styles.serviceMeta}>{svc.durationMin ? `${svc.durationMin} min` : 'No duration set'}</Text>
+              <Text style={styles.serviceMeta}>{formatDuration(svc.durationMin) ?? 'Длительность не указана'}</Text>
             </View>
             <Text style={styles.servicePrice}>{svc.priceKzt ? formatMoney(svc.priceKzt) : '—'}</Text>
           </View>
@@ -343,10 +343,10 @@ export function ProviderServicesScreen() {
                 </View>
                 <View style={styles.editCell}>
                   <Field
-                    label="Duration (min)"
+                    label="Длительность (мин)"
                     value={editDuration}
                     onChangeText={setEditDuration}
-                    placeholder="50"
+                    placeholder="60"
                     keyboardType="numeric"
                   />
                 </View>
