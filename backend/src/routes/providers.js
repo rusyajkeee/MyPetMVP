@@ -225,7 +225,19 @@ router.get('/:id/slots', async (req, res, next) => {
     });
 
     const bookedTimes = new Set(booked.map((b) => b.scheduledAt.toISOString().slice(11, 16)));
-    res.json({ slots: BOOKING_SLOTS.map((time) => ({ time, available: !bookedTimes.has(time) })) });
+
+    // Mark past slots unavailable when the requested date is today (UTC)
+    const now = new Date();
+    const todayUTC = now.toISOString().slice(0, 10);
+    const nowMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
+
+    res.json({
+      slots: BOOKING_SLOTS.map((time) => {
+        const [h, m] = time.split(':').map(Number);
+        const isPast = date === todayUTC && (h * 60 + m) <= nowMinutes;
+        return { time, available: !bookedTimes.has(time) && !isPast };
+      }),
+    });
   } catch (e) {
     next(e);
   }
