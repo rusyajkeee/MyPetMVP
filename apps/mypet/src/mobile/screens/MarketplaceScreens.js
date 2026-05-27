@@ -514,9 +514,9 @@ export function DiscoverScreen({ navigate, route }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [submittedQuery, setSubmittedQuery] = useState('');
   const [searchResults, setSearchResults] = useState({ categories: [], services: [], providers: [] });
   const [searching, setSearching] = useState(false);
-  const searchTimer = useRef(null);
   const savedCoordsRef = useRef(null);
 
   useEffect(() => {
@@ -541,18 +541,20 @@ export function DiscoverScreen({ navigate, route }) {
 
   function handleSearchChange(text) {
     setSearchQuery(text);
-    if (searchTimer.current) clearTimeout(searchTimer.current);
-    if (text.trim().length < 2) {
+    if (!text.trim()) {
+      setSubmittedQuery('');
       setSearchResults({ categories: [], services: [], providers: [] });
-      setSearching(false);
-      return;
     }
+  }
+
+  async function handleSearchSubmit() {
+    const q = searchQuery.trim();
+    if (q.length < 2) return;
+    setSubmittedQuery(q);
     setSearching(true);
-    searchTimer.current = setTimeout(async () => {
-      const results = await smartSearch(mode, text.trim(), savedCoordsRef.current, allProviders);
-      setSearchResults(results);
-      setSearching(false);
-    }, 350);
+    const results = await smartSearch(mode, q, savedCoordsRef.current, allProviders);
+    setSearchResults(results);
+    setSearching(false);
   }
 
   function toggleCategory(slug) {
@@ -564,7 +566,7 @@ export function DiscoverScreen({ navigate, route }) {
     });
   }
 
-  const isSearching = searchQuery.trim().length >= 2;
+  const isSearching = submittedQuery.length >= 2;
 
   const providers = allProviders.filter((prov) => {
     if (showFavorites && !favoriteIds.has(prov.id)) return false;
@@ -585,15 +587,23 @@ export function DiscoverScreen({ navigate, route }) {
           placeholderTextColor={p.inkSoft}
           value={searchQuery}
           onChangeText={handleSearchChange}
+          onSubmitEditing={handleSearchSubmit}
           returnKeyType="search"
           autoCapitalize="none"
           autoCorrect={false}
+          blurOnSubmit={false}
         />
         {searchQuery.length > 0 ? (
-          <Pressable onPress={() => { setSearchQuery(''); setSearchResults([]); }}>
+          <Pressable onPress={() => { setSearchQuery(''); setSubmittedQuery(''); setSearchResults({ categories: [], services: [], providers: [] }); }}>
             <MaterialCommunityIcons name="close-circle" size={18} color={p.inkSoft} />
           </Pressable>
         ) : null}
+        <Pressable
+          onPress={handleSearchSubmit}
+          style={[styles.searchSubmitBtn, { backgroundColor: p.brand, opacity: searchQuery.trim().length < 2 ? 0.4 : 1 }]}
+        >
+          <MaterialCommunityIcons name="arrow-right" size={16} color="#fff" />
+        </Pressable>
       </View>
 
       {isSearching ? (
@@ -1284,6 +1294,14 @@ const styles = StyleSheet.create({
   serviceCardMetaText: {
     fontSize: 12,
     fontFamily: typography.body,
+  },
+  searchSubmitBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 2,
   },
   searchCatRow: {
     gap: spacing.xs,
