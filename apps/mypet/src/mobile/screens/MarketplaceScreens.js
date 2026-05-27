@@ -204,6 +204,8 @@ export function NearbyServicesScreen({ navigate }) {
   const [topRated, setTopRated] = useState(false);
   const [viewMode, setViewMode] = useState('list');
   const [userCoords, setUserCoords] = useState(ASTANA);
+  const [locationStatus, setLocationStatus] = useState('loading'); // 'loading' | 'gps' | 'fallback' | 'denied'
+
   useEffect(() => {
     let active = true;
 
@@ -213,13 +215,25 @@ export function NearbyServicesScreen({ navigate }) {
 
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status === 'granted') {
-          const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        if (status !== 'granted') {
+          if (active) setLocationStatus('denied');
+        } else {
+          const pos = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Highest,
+          });
           coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-          if (active) setUserCoords({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
+          if (active) {
+            setUserCoords({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
+            setLocationStatus('gps');
+          }
         }
       } catch {
-        // falls back to Astana center
+        if (active) setLocationStatus('fallback');
+      }
+
+      if (!coords.lat) {
+        coords = { lat: ASTANA.latitude, lng: ASTANA.longitude };
+        if (active && locationStatus !== 'denied') setLocationStatus('fallback');
       }
 
       const items = await listNearbyProviders({ ...coords, radius: radiusKm, category, topRated });
@@ -244,6 +258,12 @@ export function NearbyServicesScreen({ navigate }) {
   return (
     <Screen scrollable={viewMode === 'list'}>
       <HeroTitle eyebrow={t('nearby_eyebrow')} title={t('nearby_title')} subtitle={t('nearby_subtitle')} />
+
+      {locationStatus === 'fallback' ? (
+        <Notice tone="warning" icon="map-marker-alert-outline" body="Не удалось определить ваше местоположение. Расстояния считаются от центра Астаны." />
+      ) : locationStatus === 'denied' ? (
+        <Notice tone="warning" icon="map-marker-off-outline" body="Доступ к геолокации запрещён. Расстояния считаются от центра Астаны." />
+      ) : null}
 
       <View style={[styles.viewToggle, { backgroundColor: p.surfaceMuted }]}>
         <Pressable
