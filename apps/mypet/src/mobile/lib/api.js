@@ -963,6 +963,70 @@ export async function getProviderStats(mode) {
   return liveRequest('get', '/providers/me/stats');
 }
 
+export async function getProviderAnalytics(mode, period = 'month') {
+  if (mode === 'demo') {
+    const state = await readDemoState();
+    const bookings = state.providerInboxBookings || [];
+    const completed = bookings.filter((b) => b.status === 'COMPLETED');
+    const totalRevenue = completed.reduce((s, b) => s + (b.service?.priceKzt || 0), 0);
+
+    const dayLabels = ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс'];
+    const monthLabels = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+    const now = new Date();
+
+    let revenueChart;
+    if (period === 'week') {
+      revenueChart = dayLabels.map((label, i) => ({ label, value: [8500, 12000, 5000, 18000, 9500, 22000, 14500][i] }));
+    } else if (period === 'month') {
+      const points = [];
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getTime() - i * 5 * 86400000);
+        points.push({ label: `${d.getDate()}.${d.getMonth() + 1}`, value: Math.round(15000 + Math.random() * 30000) });
+      }
+      revenueChart = points;
+    } else {
+      revenueChart = monthLabels.slice(0, 12).map((label, i) => ({ label, value: Math.round(40000 + i * 8000 + Math.random() * 20000) }));
+    }
+
+    const svcMap = {};
+    for (const b of bookings) {
+      if (!b.service) continue;
+      const { id, title, priceKzt } = b.service;
+      if (!svcMap[id]) svcMap[id] = { id, title, priceKzt, count: 0, revenue: 0 };
+      svcMap[id].count++;
+      if (b.status === 'COMPLETED') svcMap[id].revenue += priceKzt;
+    }
+    let topServices = Object.values(svcMap).sort((a, z) => z.count - a.count).slice(0, 5);
+    if (topServices.length === 0) {
+      topServices = [
+        { id: 'd1', title: 'Стрижка', count: 18, revenue: 108000, priceKzt: 6000 },
+        { id: 'd2', title: 'Купание', count: 12, revenue: 60000, priceKzt: 5000 },
+        { id: 'd3', title: 'Чистка ушей', count: 8, revenue: 24000, priceKzt: 3000 },
+        { id: 'd4', title: 'Стрижка когтей', count: 5, revenue: 10000, priceKzt: 2000 },
+      ];
+    }
+
+    const statusBreakdown = {};
+    for (const b of bookings) statusBreakdown[b.status] = (statusBreakdown[b.status] || 0) + 1;
+    if (Object.keys(statusBreakdown).length === 0) {
+      Object.assign(statusBreakdown, { COMPLETED: 43, PENDING: 5, ACCEPTED: 3, CANCELLED: 7 });
+    }
+
+    return {
+      totalRevenue: totalRevenue || 202000,
+      totalClients: new Set(bookings.map(b => b.userId)).size || 28,
+      totalBookings: bookings.length || 58,
+      completedBookings: completed.length || 43,
+      cancelledBookings: bookings.filter(b => b.status === 'CANCELLED').length || 7,
+      avgRating: 4.8,
+      topServices,
+      revenueChart,
+      statusBreakdown,
+    };
+  }
+  return liveRequest('get', `/providers/me/analytics?period=${period}`);
+}
+
 // ─── Notification helpers (live mode) ─────────────────────────────────────
 
 export async function fetchApiNotifications(mode) {

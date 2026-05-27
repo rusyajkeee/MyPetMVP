@@ -1,6 +1,6 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
-import { Linking, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Dimensions, Linking, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -8,6 +8,7 @@ import { useT } from '../context/LocaleContext';
 import {
   createStaff,
   deleteStaff,
+  getProviderAnalytics,
   getProviderStats,
   listMyStaff,
   listProviderBookings,
@@ -644,6 +645,209 @@ function buildActionButtons(status) {
   }
 }
 
+// ─── Analytics ─────────────────────────────────────────────────────────────
+
+const SCREEN_W = Dimensions.get('window').width;
+
+const PERIODS = [
+  { key: 'week',  label: 'Неделя' },
+  { key: 'month', label: 'Месяц' },
+  { key: 'year',  label: 'Год' },
+  { key: 'all',   label: 'Всё время' },
+];
+
+const STATUS_LABELS = {
+  PENDING:     { label: 'Ожидают',    color: '#F59E0B' },
+  ACCEPTED:    { label: 'Приняты',    color: '#10B981' },
+  IN_PROGRESS: { label: 'В процессе', color: '#6366F1' },
+  COMPLETED:   { label: 'Выполнено', color: '#059669' },
+  CANCELLED:   { label: 'Отменено',  color: '#EF4444' },
+};
+
+export function ProviderAnalyticsScreen() {
+  const { mode } = useAuth();
+  const [period, setPeriod] = useState('month');
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState('');
+
+  async function load(isRefresh = false, p = period) {
+    if (isRefresh) setRefreshing(true);
+    else setLoading(true);
+    setError('');
+    try {
+      const res = await getProviderAnalytics(mode, p);
+      setData(res);
+    } catch (e) {
+      setError(e.message || 'Не удалось загрузить аналитику.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }
+
+  useEffect(() => { load(false, period); }, [mode, period]);
+
+  function handlePeriod(p) {
+    setPeriod(p);
+  }
+
+  const chart = data?.revenueChart || [];
+  const maxChart = Math.max(...chart.map(c => c.value), 1);
+  const totalSvc = data?.topServices?.reduce((s, t) => s + t.count, 0) || 1;
+  const statusEntries = Object.entries(data?.statusBreakdown || {});
+  const totalStatus = statusEntries.reduce((s, [, v]) => s + v, 0) || 1;
+
+  return (
+    <Screen refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true, period)} />}>
+      <HeroTitle icon="chart-bar" title="Аналитика" subtitle="Ваши показатели" />
+
+      {/* Period selector */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.periodRow}>
+        {PERIODS.map((item) => (
+          <Pressable
+            key={item.key}
+            onPress={() => handlePeriod(item.key)}
+            style={[
+              styles.periodBtn,
+              period === item.key && styles.periodBtnActive,
+            ]}
+          >
+            <Text style={[styles.periodLabel, period === item.key && styles.periodLabelActive]}>
+              {item.label}
+            </Text>
+          </Pressable>
+        ))}
+      </ScrollView>
+
+      {error ? <Notice tone="danger" icon="alert-circle" body={error} /> : null}
+
+      {/* Big KPI tiles */}
+      <View style={styles.kpiGrid}>
+        <KpiTile
+          icon="cash-multiple"
+          label="Доход"
+          value={loading ? '…' : formatMoney(data?.totalRevenue)}
+          color="#059669"
+        />
+        <KpiTile
+          icon="account-group-outline"
+          label="Клиентов"
+          value={loading ? '…' : String(data?.totalClients ?? 0)}
+          color="#6366F1"
+        />
+        <KpiTile
+          icon="check-circle-outline"
+          label="Выполнено"
+          value={loading ? '…' : String(data?.completedBookings ?? 0)}
+          color="#10B981"
+        />
+        <KpiTile
+          icon="star-outline"
+          label="Рейтинг"
+          value={loading ? '…' : (data?.avgRating != null ? `${data.avgRating} ★` : '—')}
+          color="#F59E0B"
+        />
+      </View>
+
+      {/* Revenue bar chart */}
+      <GlassCard>
+        <SectionTitle title="График дохода" />
+        {loading ? (
+          <View style={styles.chartSkeleton} />
+        ) : chart.length === 0 ? (
+          <Text style={styles.emptyChart}>Нет данных за период</Text>
+        ) : (
+          <View style={styles.chartWrap}>
+            {chart.map((point, i) => {
+              const pct = maxChart > 0 ? point.value / maxChart : 0;
+              const barH = Math.max(pct * 120, point.value > 0 ? 4 : 2);
+              return (
+                <View key={i} style={styles.chartBar}>
+                  <Text style={styles.chartVal}>
+                    {point.value > 0 ? (point.value >= 1000 ? `${Math.round(point.value / 1000)}к` : point.value) : ''}
+                  </Text>
+                  <View style={[styles.chartBarFill, { height: barH, backgroundColor: point.value > 0 ? palette.success : palette.line }]} />
+                  <Text style={styles.chartLabel}>{point.label}</Text>
+                </View>
+              );
+            })}
+          </View>
+        )}
+      </GlassCard>
+
+      {/* Top services */}
+      {!loading && (data?.topServices?.length ?? 0) > 0 && (
+        <GlassCard>
+          <SectionTitle title="Популярные услуги" />
+          <View style={styles.svcList}>
+            {data.topServices.map((svc, i) => {
+              const pct = svc.count / (data.topServices[0]?.count || 1);
+              return (
+                <View key={svc.id} style={styles.svcRow}>
+                  <View style={styles.svcMeta}>
+                    <Text style={styles.svcRank}>#{i + 1}</Text>
+                    <View style={styles.svcCopy}>
+                      <Text style={styles.svcTitle} numberOfLines={1}>{svc.title}</Text>
+                      <Text style={styles.svcSub}>{svc.count} записей · {formatMoney(svc.revenue)}</Text>
+                    </View>
+                  </View>
+                  <View style={styles.svcBarWrap}>
+                    <View style={[styles.svcBarFill, { width: `${Math.round(pct * 100)}%` }]} />
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        </GlassCard>
+      )}
+
+      {/* Booking status breakdown */}
+      {!loading && statusEntries.length > 0 && (
+        <GlassCard>
+          <SectionTitle title="Статусы записей" subtitle={`${data?.totalBookings ?? 0} всего`} />
+          <View style={styles.statusList}>
+            {statusEntries.map(([status, count]) => {
+              const info = STATUS_LABELS[status] || { label: status, color: palette.inkSoft };
+              const pct = count / totalStatus;
+              return (
+                <View key={status} style={styles.statusRow}>
+                  <View style={[styles.statusDot, { backgroundColor: info.color }]} />
+                  <Text style={styles.statusLabel}>{info.label}</Text>
+                  <View style={styles.statusBarWrap}>
+                    <View style={[styles.statusBarFill, { width: `${Math.round(pct * 100)}%`, backgroundColor: info.color + '66' }]} />
+                  </View>
+                  <Text style={styles.statusCount}>{count}</Text>
+                </View>
+              );
+            })}
+          </View>
+        </GlassCard>
+      )}
+
+      {loading && !data ? (
+        <>
+          <SkeletonCard />
+          <SkeletonCard />
+        </>
+      ) : null}
+    </Screen>
+  );
+}
+
+function KpiTile({ icon, label, value, color }) {
+  return (
+    <GlassCard style={styles.kpiTile}>
+      <View style={[styles.kpiIcon, { backgroundColor: color + '1A' }]}>
+        <MaterialCommunityIcons name={icon} size={20} color={color} />
+      </View>
+      <Text style={styles.kpiValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{value}</Text>
+      <Text style={styles.kpiLabel}>{label}</Text>
+    </GlassCard>
+  );
+}
+
 function StatTile({ icon, label, value, tone }) {
   const toneColors = {
     success: palette.success,
@@ -950,5 +1154,193 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.92,
+  },
+
+  // Analytics
+  periodRow: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+    paddingBottom: spacing.xs,
+  },
+  periodBtn: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: palette.line,
+    backgroundColor: 'transparent',
+  },
+  periodBtnActive: {
+    backgroundColor: palette.accent,
+    borderColor: palette.accent,
+  },
+  periodLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    fontFamily: typography.body,
+    color: palette.inkSoft,
+  },
+  periodLabelActive: {
+    color: '#fff',
+  },
+  kpiGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  kpiTile: {
+    width: '47.5%',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: spacing.lg,
+  },
+  kpiIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 2,
+  },
+  kpiValue: {
+    color: palette.ink,
+    fontSize: 17,
+    fontWeight: '700',
+    fontFamily: typography.display,
+    textAlign: 'center',
+  },
+  kpiLabel: {
+    color: palette.inkSoft,
+    fontSize: 11,
+    fontWeight: '600',
+    fontFamily: typography.body,
+    textAlign: 'center',
+  },
+  chartWrap: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 4,
+    height: 150,
+    paddingTop: spacing.sm,
+  },
+  chartBar: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 4,
+  },
+  chartBarFill: {
+    width: '100%',
+    borderRadius: 4,
+    minHeight: 2,
+  },
+  chartLabel: {
+    fontSize: 9,
+    color: palette.inkSoft,
+    fontFamily: typography.body,
+    textAlign: 'center',
+  },
+  chartVal: {
+    fontSize: 8,
+    color: palette.inkSoft,
+    fontFamily: typography.body,
+  },
+  chartSkeleton: {
+    height: 140,
+    borderRadius: radius.md,
+    backgroundColor: palette.line,
+    opacity: 0.5,
+  },
+  emptyChart: {
+    textAlign: 'center',
+    color: palette.inkSoft,
+    fontSize: 13,
+    fontFamily: typography.body,
+    paddingVertical: spacing.xl,
+  },
+  svcList: {
+    gap: spacing.md,
+    marginTop: spacing.xs,
+  },
+  svcRow: {
+    gap: 6,
+  },
+  svcMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  svcRank: {
+    color: palette.inkSoft,
+    fontSize: 13,
+    fontWeight: '700',
+    fontFamily: typography.body,
+    width: 24,
+    textAlign: 'center',
+  },
+  svcCopy: {
+    flex: 1,
+    gap: 1,
+  },
+  svcTitle: {
+    color: palette.ink,
+    fontSize: 14,
+    fontWeight: '700',
+    fontFamily: typography.body,
+  },
+  svcSub: {
+    color: palette.inkSoft,
+    fontSize: 12,
+    fontFamily: typography.body,
+  },
+  svcBarWrap: {
+    height: 6,
+    backgroundColor: palette.line,
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  svcBarFill: {
+    height: '100%',
+    backgroundColor: palette.accent,
+    borderRadius: 3,
+  },
+  statusList: {
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  statusLabel: {
+    color: palette.ink,
+    fontSize: 13,
+    fontFamily: typography.body,
+    width: 90,
+  },
+  statusBarWrap: {
+    flex: 1,
+    height: 8,
+    backgroundColor: palette.line,
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  statusBarFill: {
+    height: '100%',
+    borderRadius: 4,
+  },
+  statusCount: {
+    color: palette.inkSoft,
+    fontSize: 13,
+    fontWeight: '700',
+    fontFamily: typography.body,
+    width: 28,
+    textAlign: 'right',
   },
 });

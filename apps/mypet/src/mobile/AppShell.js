@@ -28,6 +28,7 @@ import {
   ProfileScreen,
 } from './screens/CareScreens';
 import {
+  ProviderAnalyticsScreen,
   ProviderDashboardScreen,
   ProviderInboxScreen,
   ProviderServicesScreen,
@@ -54,10 +55,11 @@ const SCREEN_PATHS = {
   pets:              '/pets',
   profile:           '/profile',
   notifications:     '/notifications',
-  providerDashboard: '/dashboard',
-  providerInbox:     '/inbox',
-  providerServices:  '/my-services',
-  providerProfile:   '/provider-profile',
+  providerDashboard:  '/dashboard',
+  providerInbox:      '/inbox',
+  providerServices:   '/my-services',
+  providerAnalytics:  '/analytics',
+  providerProfile:    '/provider-profile',
   provider:  (p) => `/provider/${p?.id || ''}`,
   booking:   (p) => `/booking/${p?.providerId || ''}`,
   petDetails:(p) => `/pets/${p?.petId || ''}`,
@@ -73,10 +75,11 @@ const PATH_TO_SCREEN = {
   '/pets':            'pets',
   '/profile':         'profile',
   '/notifications':   'notifications',
-  '/dashboard':       'providerDashboard',
-  '/inbox':           'providerInbox',
-  '/my-services':     'providerServices',
-  '/provider-profile':'providerProfile',
+  '/dashboard':        'providerDashboard',
+  '/inbox':            'providerInbox',
+  '/my-services':      'providerServices',
+  '/analytics':        'providerAnalytics',
+  '/provider-profile': 'providerProfile',
 };
 
 function getScreenPath(name, params) {
@@ -122,11 +125,11 @@ export function AppShell() {
   ];
 
   const PROVIDER_TABS = [
-    { key: 'providerDashboard', label: t('tab_dashboard'), icon: 'view-dashboard-outline' },
-    { key: 'providerInbox',     label: t('tab_inbox'),     icon: 'inbox-multiple-outline' },
-    { key: 'providerServices',  label: t('tab_services'),  icon: 'toolbox-outline' },
-    { key: 'notifications',     label: t('tab_alerts'),    icon: 'bell-outline' },
-    { key: 'providerProfile',   label: t('tab_profile'),   icon: 'account-circle-outline' },
+    { key: 'providerDashboard',  label: t('tab_dashboard'), icon: 'view-dashboard-outline' },
+    { key: 'providerInbox',      label: t('tab_inbox'),     icon: 'inbox-multiple-outline' },
+    { key: 'providerServices',   label: t('tab_services'),  icon: 'toolbox-outline' },
+    { key: 'providerAnalytics',  label: 'Аналитика',        icon: 'chart-bar' },
+    { key: 'providerProfile',    label: t('tab_profile'),   icon: 'account-circle-outline' },
   ];
 
   const activeTabs = isAdmin ? ADMIN_TABS : isProvider ? PROVIDER_TABS : USER_TABS;
@@ -444,10 +447,11 @@ function renderRoute(route, nav, unreadCount) {
     case 'petDetails':return <PetDetailsScreen navigate={nav.navigate} route={route} />;
     case 'medical':   return <MedicalCardScreen navigate={nav.navigate} route={route} />;
 
-    case 'providerDashboard': return <ProviderDashboardScreen navigate={nav.navigate} />;
-    case 'providerInbox':     return <ProviderInboxScreen     navigate={nav.navigate} />;
-    case 'providerServices':  return <ProviderServicesScreen  navigate={nav.navigate} />;
-    case 'providerProfile':   return <ProviderProfileScreen   navigate={nav.navigate} />;
+    case 'providerDashboard':  return <ProviderDashboardScreen  navigate={nav.navigate} />;
+    case 'providerInbox':      return <ProviderInboxScreen      navigate={nav.navigate} />;
+    case 'providerServices':   return <ProviderServicesScreen   navigate={nav.navigate} />;
+    case 'providerAnalytics':  return <ProviderAnalyticsScreen  navigate={nav.navigate} />;
+    case 'providerProfile':    return <ProviderProfileScreen    navigate={nav.navigate} />;
 
     case 'adminDashboard':    return <AdminDashboardScreen    navigate={nav.navigate} />;
     case 'adminApplications': return <AdminApplicationsScreen navigate={nav.navigate} />;

@@ -183,6 +183,98 @@ router.get('/me/stats', authMiddleware, attachUser, requireRole('PROVIDER', 'ADM
   }
 });
 
+router.get('/me/analytics', authMiddleware, attachUser, requireRole('PROVIDER', 'ADMIN'), async (req, res, next) => {
+  try {
+    const provider = await prisma.provider.findUnique({ where: { userId: req.userId } });
+    const empty = { totalRevenue: 0, totalClients: 0, totalBookings: 0, completedBookings: 0, cancelledBookings: 0, avgRating: null, topServices: [], revenueChart: [], statusBreakdown: {} };
+    if (!provider) return res.json(empty);
+
+    const period = req.query.period || 'month';
+    const now = new Date();
+    const sinceMap = { week: 7, month: 30, year: 365 };
+    const days = sinceMap[period];
+    const since = days ? new Date(now.getTime() - days * 86400000) : null;
+
+    const where = { providerId: provider.id };
+    if (since) where.scheduledAt = { gte: since };
+
+    const bookings = await prisma.booking.findMany({
+      where,
+      include: { service: { select: { id: true, title: true, priceKzt: true } } },
+    });
+
+    const completed = bookings.filter(b => b.status === 'COMPLETED');
+
+    const totalRevenue = completed.reduce((s, b) => s + (b.service?.priceKzt || 0), 0);
+    const totalClients = new Set(bookings.map(b => b.userId)).size;
+
+    // Top services by booking count
+    const svcMap = {};
+    for (const b of bookings) {
+      if (!b.service) continue;
+      const { id, title, priceKzt } = b.service;
+      if (!svcMap[id]) svcMap[id] = { id, title, priceKzt, count: 0, revenue: 0 };
+      svcMap[id].count++;
+      if (b.status === 'COMPLETED') svcMap[id].revenue += priceKzt;
+    }
+    const topServices = Object.values(svcMap).sort((a, b) => b.count - a.count).slice(0, 5);
+
+    // Revenue chart: by day (week/month) or by month (year/all)
+    const groupMonth = period === 'year' || period === 'all';
+    const chartMap = {};
+    for (const b of completed) {
+      const d = b.scheduledAt || b.createdAt;
+      const key = groupMonth
+        ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+        : d.toISOString().slice(0, 10);
+      chartMap[key] = (chartMap[key] || 0) + (b.service?.priceKzt || 0);
+    }
+
+    const revenueChart = [];
+    if (period === 'week') {
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(now.getTime() - i * 86400000);
+        const key = d.toISOString().slice(0, 10);
+        revenueChart.push({ label: ['вс','пн','вт','ср','чт','пт','сб'][d.getDay()], value: chartMap[key] || 0 });
+      }
+    } else if (period === 'month') {
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getTime() - i * 5 * 86400000);
+        const key = d.toISOString().slice(0, 10);
+        revenueChart.push({ label: key.slice(5).replace('-', '.'), value: Object.entries(chartMap).filter(([k]) => k <= key && k > new Date(d.getTime() - 5 * 86400000).toISOString().slice(0, 10)).reduce((s, [, v]) => s + v, 0) });
+      }
+    } else {
+      const count = period === 'year' ? 12 : 12;
+      for (let i = count - 1; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        revenueChart.push({ label: d.toLocaleString('ru-RU', { month: 'short' }), value: chartMap[key] || 0 });
+      }
+    }
+
+    // Avg rating
+    const reviews = await prisma.review.findMany({ where: { providerId: provider.id }, select: { rating: true } });
+    const avgRating = reviews.length > 0 ? Math.round(reviews.reduce((s, r) => s + r.rating, 0) / reviews.length * 10) / 10 : null;
+
+    const statusBreakdown = {};
+    for (const b of bookings) statusBreakdown[b.status] = (statusBreakdown[b.status] || 0) + 1;
+
+    res.json({
+      totalRevenue,
+      totalClients,
+      totalBookings: bookings.length,
+      completedBookings: completed.length,
+      cancelledBookings: bookings.filter(b => b.status === 'CANCELLED').length,
+      avgRating,
+      topServices,
+      revenueChart,
+      statusBreakdown,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
 // Staff management — own (provider-auth required)
 router.get('/me/staff', authMiddleware, attachUser, requireRole('PROVIDER', 'ADMIN'), async (req, res, next) => {
   try {
