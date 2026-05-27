@@ -725,11 +725,11 @@ const styles = StyleSheet.create({
   screenContent: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.lg,
-    paddingBottom: 110,
+    paddingBottom: 140,
     gap: spacing.lg,
   },
   screenContentWithFooter: {
-    paddingBottom: 140,
+    paddingBottom: 170,
   },
   card: {
     borderRadius: radius.lg,

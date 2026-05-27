@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState } from 'react';
-import { Animated, BackHandler, Keyboard, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, BackHandler, Dimensions, Keyboard, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useAuth } from './context/AuthContext';
 import { useTheme } from './context/ThemeContext';
@@ -127,6 +127,7 @@ export function AppShell() {
     const fromUrl = getInitialRouteFromUrl();
     return [fromUrl || makeRoute('welcome')];
   });
+  const [navDir, setNavDir] = useState('forward');
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [toast, setToast] = useState(null);
@@ -239,16 +240,19 @@ export function AppShell() {
   }, []);
 
   function navigate(name, params = {}) {
+    setNavDir('forward');
     setStack((s) => [...s, makeRoute(name, params)]);
     pushHistoryState(name, params);
   }
 
   function resetTo(name, params = {}) {
+    setNavDir('tab');
     setStack([makeRoute(name, params)]);
     pushHistoryState(name, params);
   }
 
   function goBack() {
+    setNavDir('back');
     setStack((s) => {
       if (s.length <= 1) return s;
       const prev = s[s.length - 2];
@@ -293,9 +297,9 @@ export function AppShell() {
     <View style={[styles.shell, { backgroundColor: p.bg }]}>
       <StatusBar style={dark ? 'light' : 'dark'} />
       <SwipeBackView enabled={canGoBack} onBack={goBack}>
-        <ScreenFadeIn routeKey={routeKey}>
+        <ScreenTransition routeKey={routeKey} direction={navDir}>
           {content}
-        </ScreenFadeIn>
+        </ScreenTransition>
       </SwipeBackView>
       {canGoBack ? (
         <Pressable
@@ -362,21 +366,36 @@ function SwipeBackView({ children, enabled, onBack }) {
   );
 }
 
-function ScreenFadeIn({ routeKey, children }) {
-  const opacity = useRef(new Animated.Value(0)).current;
-  const slideY  = useRef(new Animated.Value(20)).current;
+const SCREEN_W = Dimensions.get('window').width;
+
+function ScreenTransition({ routeKey, direction, children }) {
+  const slideX  = useRef(new Animated.Value(0)).current;
+  const opacity = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    opacity.setValue(0);
-    slideY.setValue(20);
-    Animated.parallel([
-      Animated.timing(opacity, { toValue: 1, duration: 210, useNativeDriver: true }),
-      Animated.spring(slideY, { toValue: 0, tension: 95, friction: 14, useNativeDriver: true }),
-    ]).start();
+    if (direction === 'tab') {
+      // Tab switch: simple fade
+      opacity.setValue(0);
+      slideX.setValue(0);
+      Animated.timing(opacity, { toValue: 1, duration: 200, useNativeDriver: true }).start();
+    } else if (direction === 'back') {
+      // Go back: new screen slides in from left
+      slideX.setValue(-SCREEN_W * 0.35);
+      opacity.setValue(0.5);
+      Animated.parallel([
+        Animated.spring(slideX, { toValue: 0, tension: 240, friction: 30, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 1, duration: 180, useNativeDriver: true }),
+      ]).start();
+    } else {
+      // Navigate forward: new screen slides in from right
+      slideX.setValue(SCREEN_W);
+      opacity.setValue(1);
+      Animated.spring(slideX, { toValue: 0, tension: 240, friction: 30, useNativeDriver: true }).start();
+    }
   }, [routeKey]);
 
   return (
-    <Animated.View style={{ flex: 1, opacity, transform: [{ translateY: slideY }] }}>
+    <Animated.View style={{ flex: 1, opacity, transform: [{ translateX: slideX }] }}>
       {children}
     </Animated.View>
   );
