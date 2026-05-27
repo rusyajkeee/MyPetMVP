@@ -109,12 +109,17 @@ export function GlassCard({ children, style }) {
 
 // ─── HeroTitle ─────────────────────────────────────────────────────────────
 
-export function HeroTitle({ eyebrow, title, subtitle, action }) {
+export function HeroTitle({ eyebrow, title, subtitle, action, trailing }) {
   const { palette: p } = useTheme();
   return (
     <View style={styles.heroBlock}>
-      {eyebrow ? <Text style={[styles.eyebrow, { color: p.accentDark }]}>{eyebrow}</Text> : null}
-      <Text style={[styles.heroTitle, { color: p.ink }]}>{title}</Text>
+      <View style={styles.heroTopRow}>
+        <View style={{ flex: 1 }}>
+          {eyebrow ? <Text style={[styles.eyebrow, { color: p.accentDark }]}>{eyebrow}</Text> : null}
+          <Text style={[styles.heroTitle, { color: p.ink }]}>{title}</Text>
+        </View>
+        {trailing ?? null}
+      </View>
       {subtitle ? <Text style={[styles.heroSubtitle, { color: p.inkSoft }]}>{subtitle}</Text> : null}
       {action}
     </View>
@@ -753,6 +758,11 @@ const styles = StyleSheet.create({
   },
   heroBlock: {
     gap: 6,
+  },
+  heroTopRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
   },
   eyebrow: {
     color: palette.accentDark,

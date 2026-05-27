@@ -105,12 +105,11 @@ export function AppShell() {
   const isProvider = user?.role === 'PROVIDER';
 
   const USER_TABS = [
-    { key: 'home',          label: t('tab_home'),      icon: 'home-variant-outline' },
-    { key: 'discover',      label: t('tab_discover'),  icon: 'magnify' },
-    { key: 'bookings',      label: t('tab_bookings'),  icon: 'calendar-blank-outline' },
-    { key: 'pets',          label: t('tab_pets'),      icon: 'paw-outline' },
-    { key: 'notifications', label: t('tab_alerts'),    icon: 'bell-outline' },
-    { key: 'profile',       label: t('tab_profile'),   icon: 'account-circle-outline' },
+    { key: 'home',     label: t('tab_home'),      icon: 'home-variant-outline' },
+    { key: 'discover', label: t('tab_discover'),  icon: 'magnify' },
+    { key: 'bookings', label: t('tab_bookings'),  icon: 'calendar-blank-outline' },
+    { key: 'pets',     label: t('tab_pets'),      icon: 'paw-outline' },
+    { key: 'profile',  label: t('tab_profile'),   icon: 'account-circle-outline' },
   ];
 
   const PROVIDER_TABS = [
@@ -281,7 +280,7 @@ export function AppShell() {
     );
   }
 
-  const content = renderRoute(route, { navigate, resetTo });
+  const content = renderRoute(route, { navigate, resetTo }, unreadCount);
   const routeKey = `${route.name}:${route.params?.id || route.params?.providerId || ''}`;
 
   const tabs = isProvider ? PROVIDER_TABS : USER_TABS;
@@ -398,13 +397,13 @@ function ToastPopup({ title, body, anim, onDismiss }) {
   );
 }
 
-function renderRoute(route, nav) {
+function renderRoute(route, nav, unreadCount) {
   switch (route.name) {
     case 'login':    return <LoginScreen    navigate={nav.navigate} />;
     case 'register': return <RegisterScreen navigate={nav.navigate} />;
     case 'welcome':  return <WelcomeScreen  navigate={nav.navigate} />;
 
-    case 'home':          return <HomeScreen     navigate={nav.navigate} />;
+    case 'home':          return <HomeScreen     navigate={nav.navigate} unreadCount={unreadCount} />;
     case 'discover':      return <DiscoverScreen  navigate={nav.navigate} route={route} />;
     case 'nearby':        return <NearbyServicesScreen navigate={nav.navigate} route={route} />;
     case 'bookings':      return <BookingsScreen  navigate={nav.navigate} route={route} />;

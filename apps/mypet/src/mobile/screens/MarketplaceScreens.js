@@ -60,7 +60,7 @@ const CAT_DARK = {
   SHELTER:    { bg: 'rgba(248,113,113,0.10)', icon: '#F87171' },
 };
 
-export function HomeScreen({ navigate }) {
+export function HomeScreen({ navigate, unreadCount = 0 }) {
   const { mode, user } = useAuth();
   const { palette: p, dark } = useTheme();
   const t = useT();
@@ -97,6 +97,19 @@ export function HomeScreen({ navigate }) {
         eyebrow={t('home_eyebrow')}
         title={`${t('home_hi')}, ${user?.firstName || 'there'}`}
         subtitle={t('home_subtitle')}
+        trailing={
+          <Pressable
+            onPress={() => navigate('notifications')}
+            style={({ pressed }) => [styles.bellBtn, pressed && { opacity: 0.7 }]}
+          >
+            <MaterialCommunityIcons name="bell-outline" size={26} color={p.ink} />
+            {unreadCount > 0 && (
+              <View style={styles.bellBadge}>
+                <Text style={styles.bellBadgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+              </View>
+            )}
+          </Pressable>
+        }
       />
 
       {nextBooking ? (
@@ -1188,6 +1201,32 @@ const styles = StyleSheet.create({
   trailingButton: {
     minHeight: 40,
     paddingHorizontal: 14,
+  },
+  bellBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  bellBadge: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#EF4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  bellBadgeText: {
+    color: '#fff',
+    fontSize: 9,
+    fontWeight: '700',
+    lineHeight: 12,
   },
   providerCard: {
     flexDirection: 'row',
