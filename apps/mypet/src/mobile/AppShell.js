@@ -8,6 +8,7 @@ import { useAuth } from './context/AuthContext';
 import { useTheme } from './context/ThemeContext';
 import { useT } from './context/LocaleContext';
 import { fetchApiUnreadCount, pollProviderNotifications } from './lib/api';
+
 import { getUnreadCount } from './lib/notifications';
 import { palette, radius, shadows, spacing } from './theme';
 import { BottomTabs, LoadingState } from './ui';
@@ -34,6 +35,7 @@ import {
 } from './screens/ProviderScreens';
 import { LoginScreen, RegisterScreen, WelcomeScreen } from './screens/AuthScreens';
 import { OnboardingScreen } from './screens/OnboardingScreen';
+import { AdminDashboardScreen, AdminApplicationsScreen } from './screens/AdminScreens';
 
 function makeRoute(name, params = {}) {
   return { name, params };
@@ -103,6 +105,13 @@ export function AppShell() {
   const { dark, palette: p } = useTheme();
   const t = useT();
   const isProvider = user?.role === 'PROVIDER';
+  const isAdmin = user?.role === 'ADMIN';
+
+  const ADMIN_TABS = [
+    { key: 'adminDashboard',     label: 'Главная',   icon: 'view-dashboard-outline' },
+    { key: 'adminApplications',  label: 'Заявки',    icon: 'file-document-edit-outline' },
+    { key: 'notifications',      label: 'Уведомления', icon: 'bell-outline' },
+  ];
 
   const USER_TABS = [
     { key: 'home',     label: t('tab_home'),      icon: 'home-variant-outline' },
@@ -120,8 +129,9 @@ export function AppShell() {
     { key: 'providerProfile',   label: t('tab_profile'),   icon: 'account-circle-outline' },
   ];
 
-  const rootTabKeys = new Set((isProvider ? PROVIDER_TABS : USER_TABS).map((t) => t.key));
-  const defaultRoot = isProvider ? 'providerDashboard' : 'home';
+  const activeTabs = isAdmin ? ADMIN_TABS : isProvider ? PROVIDER_TABS : USER_TABS;
+  const rootTabKeys = new Set(activeTabs.map((t) => t.key));
+  const defaultRoot = isAdmin ? 'adminDashboard' : isProvider ? 'providerDashboard' : 'home';
 
   const [stack, setStack] = useState(() => {
     const fromUrl = getInitialRouteFromUrl();
@@ -197,7 +207,7 @@ export function AppShell() {
   }
 
   useEffect(() => {
-    if (mode !== 'live' || !isProvider) return;
+    if (mode !== 'live' || (!isProvider && !isAdmin)) return;
     let active = true;
     seenNotifIds.current = null;
 
@@ -287,8 +297,7 @@ export function AppShell() {
   const content = renderRoute(route, { navigate, resetTo }, unreadCount);
   const routeKey = `${route.name}:${route.params?.id || route.params?.providerId || ''}`;
 
-  const tabs = isProvider ? PROVIDER_TABS : USER_TABS;
-  const tabsWithBadge = tabs.map((tab) =>
+  const tabsWithBadge = activeTabs.map((tab) =>
     tab.key === 'notifications' ? { ...tab, badge: unreadCount } : tab
   );
   const showTabs = user && rootTabKeys.has(route.name) && !keyboardVisible;
@@ -439,6 +448,9 @@ function renderRoute(route, nav, unreadCount) {
     case 'providerInbox':     return <ProviderInboxScreen     navigate={nav.navigate} />;
     case 'providerServices':  return <ProviderServicesScreen  navigate={nav.navigate} />;
     case 'providerProfile':   return <ProviderProfileScreen   navigate={nav.navigate} />;
+
+    case 'adminDashboard':    return <AdminDashboardScreen    navigate={nav.navigate} />;
+    case 'adminApplications': return <AdminApplicationsScreen navigate={nav.navigate} />;
 
     default: return <WelcomeScreen navigate={nav.navigate} />;
   }

@@ -855,3 +855,18 @@ export async function pollProviderNotifications(mode) {
     return null;
   }
 }
+
+export async function adminListApplications(mode) {
+  if (mode !== 'live') return [];
+  return liveRequest('get', '/admin/provider-applications');
+}
+
+export async function adminReviewApplication(mode, id, status, adminNote) {
+  if (mode !== 'live') return null;
+  return liveRequest('patch', `/admin/provider-applications/${id}`, { data: { status, adminNote } });
+}
+
+export async function adminGetStats(mode) {
+  if (mode !== 'live') return null;
+  return liveRequest('get', '/admin/stats');
+}
