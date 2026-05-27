@@ -474,7 +474,7 @@ export function ProviderServicesScreen() {
 // ─── Provider Profile ──────────────────────────────────────────────────────
 
 export function ProviderProfileScreen() {
-  const { apiLabel, logout, mode, preview, saveProfile, user } = useAuth();
+  const { logout, mode, saveProfile, user } = useAuth();
   const { palette: p } = useTheme();
   const t = useT();
   const [form, setForm] = useState({
@@ -522,7 +522,6 @@ export function ProviderProfileScreen() {
 
       <View style={styles.metricRow}>
         <StatTile icon="cellphone-marker" label={t('profile_mode')} value="Provider" tone="success" />
-        <StatTile icon="lan-connect" label={t('profile_source')} value={apiLabel} tone="neutral" />
       </View>
 
       {saved ? <Notice tone="success" icon="check-circle-outline" body={t('profile_saved')} /> : null}
@@ -543,7 +542,6 @@ export function ProviderProfileScreen() {
         <PrimaryButton label={t('profile_save')} icon="content-save-outline" onPress={handleSave} />
       </GlassCard>
 
-      <SecondaryButton label={t('provider_switch_customer')} icon="account-switch-outline" onPress={handleSwitchToCustomer} />
       <SecondaryButton label={t('profile_sign_out')} icon="logout" onPress={logout} />
     </Screen>
   );

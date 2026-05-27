@@ -117,7 +117,10 @@ router.post('/login', async (req, res, next) => {
     const { email, password } = loginSchema.parse(req.body);
     logger.info('Login attempt', { email });
 
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await prisma.user.findUnique({
+      where: { email },
+      include: { provider: { select: { id: true, businessName: true, verified: true } } },
+    });
     if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
       logger.warn('Login failed: invalid credentials', { email });
       return res.status(401).json({ error: 'Invalid email or password' });
@@ -140,6 +143,8 @@ router.post('/login', async (req, res, next) => {
         firstName: user.firstName,
         lastName: user.lastName,
         role: user.role,
+        businessName: user.provider?.businessName ?? null,
+        provider: user.provider ?? null,
       },
       accessToken,
       refreshToken,

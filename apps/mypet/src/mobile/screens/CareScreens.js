@@ -896,7 +896,7 @@ export function MedicalCardScreen({ route }) {
 // ─── Profile ───────────────────────────────────────────────────────────────
 
 export function ProfileScreen() {
-  const { apiLabel, logout, mode, saveProfile, user } = useAuth();
+  const { logout, mode, saveProfile, user } = useAuth();
   const { palette: p } = useTheme();
   const t = useT();
   const [form, setForm] = useState({
@@ -984,8 +984,7 @@ export function ProfileScreen() {
       <AvatarBadge label={label} sublabel={user?.email || 'owner@mypet.app'} initials={initials(user)} accent={['#111315']} />
 
       <View style={styles.metricRow}>
-        <MetricTile icon="cellphone-marker" label={t('profile_mode')}   value={mode === 'demo' ? t('profile_preview') : t('profile_live')} />
-        <MetricTile icon="lan-connect"      label={t('profile_source')} value={apiLabel} />
+        <MetricTile icon="cellphone-marker" label={t('profile_mode')} value={mode === 'demo' ? t('profile_preview') : t('profile_live')} />
       </View>
 
       {saved ? <Notice tone="success" icon="check-circle-outline" body={t('profile_saved')} /> : null}

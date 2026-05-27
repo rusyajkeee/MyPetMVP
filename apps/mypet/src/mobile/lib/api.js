@@ -829,7 +829,6 @@ export async function listProviderServices(mode) {
   try {
     const provider = await liveRequest('get', '/providers/me');
     const svcs = provider.services || [];
-    console.log('[API] listProviderServices:', svcs.length, 'services from DB:', svcs.map(s => s.title).join(', '));
     return svcs;
   } catch (err) {
     if (err?.original?.response?.status === 404) return [];
@@ -840,7 +839,6 @@ export async function listProviderServices(mode) {
 export async function updateProviderService(mode, serviceId, data) {
   if (mode === 'demo') return null;
   const updated = await liveRequest('patch', `/services/${serviceId}`, { data });
-  console.log('[API] updateProviderService', serviceId, '→ price:', updated.priceKzt, 'duration:', updated.durationMin);
   return updated;
 }
 
@@ -849,7 +847,6 @@ export async function pollProviderNotifications(mode) {
   try {
     const list = await liveRequest('get', '/notifications');
     const unread = list.filter(n => !n.read);
-    console.log('[API] pollProviderNotifications: total', list.length, 'unread', unread.length);
     return unread;
   } catch {
     return null;
