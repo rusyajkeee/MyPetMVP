@@ -548,6 +548,99 @@ export async function searchServices(mode, query, coords) {
   }
 }
 
+// ─── Smart search (synonym-aware) ──────────────────────────────────────────
+
+const CATEGORY_SYNONYMS = [
+  {
+    slug: 'GROOMING',
+    synonyms: [
+      'груминг', 'стрижка', 'мытье', 'мытьё', 'мойка', 'купание', 'помыть', 'вымыть',
+      'уход за шерстью', 'расчесывание', 'расчёска', 'вычесывание', 'тримминг',
+      'когти', 'стрижка когтей', 'подрезать когти', 'чистка ушей', 'чистка зубов',
+      'салон', 'груминг-салон', 'spa', 'спа', 'шампунь',
+    ],
+  },
+  {
+    slug: 'VETERINARY',
+    synonyms: [
+      'ветеринар', 'ветклиника', 'ветеринарная клиника', 'вет', 'ветврач',
+      'врач', 'доктор', 'лечение', 'лечить', 'прием', 'приём', 'осмотр',
+      'вакцина', 'вакцинация', 'прививка', 'сделать прививку',
+      'анализ', 'анализы', 'хирург', 'операция', 'стерилизация', 'кастрация',
+      'терапевт', 'болезнь', 'заболел', 'заболела', 'укол', 'капельница',
+      'диагностика', 'узи', 'рентген', 'клиника', 'больница', 'зоологический врач',
+    ],
+  },
+  {
+    slug: 'BOARDING',
+    synonyms: [
+      'передержка', 'гостиница', 'зоогостиница', 'отель для животных', 'отель для собак',
+      'отель для кошек', 'присмотр', 'уход', 'оставить питомца', 'на время отпуска',
+    ],
+  },
+  {
+    slug: 'TRAINING',
+    synonyms: [
+      'дрессировка', 'дрессировать', 'тренировка', 'тренер', 'воспитание',
+      'команды', 'поведение', 'обучение', 'кинолог', 'послушание',
+    ],
+  },
+  {
+    slug: 'SHELTER',
+    synonyms: [
+      'приют', 'усыновление', 'взять питомца', 'питомник', 'спасение', 'бездомный',
+    ],
+  },
+];
+
+function matchCategoriesByQuery(q) {
+  const lower = q.toLowerCase().trim();
+  return CATEGORY_SYNONYMS
+    .filter(({ synonyms }) =>
+      synonyms.some((s) => lower.includes(s) || s.includes(lower))
+    )
+    .map(({ slug }) => categories.find((c) => c.slug === slug))
+    .filter(Boolean);
+}
+
+export async function smartSearch(mode, query, userCoords, allProviders = []) {
+  if (!query || query.trim().length < 2) return { categories: [], services: [], providers: [] };
+
+  const q = query.trim();
+
+  // 1. Category matches via synonym dictionary
+  const matchedCategories = matchCategoriesByQuery(q);
+
+  // 2. Services from backend (or empty in demo)
+  let services = [];
+  if (mode === 'live') {
+    try {
+      const params = new URLSearchParams({ q });
+      if (userCoords?.lat) params.set('lat', String(userCoords.lat));
+      if (userCoords?.lng) params.set('lng', String(userCoords.lng));
+      services = await liveRequest('get', `/services/search?${params.toString()}`);
+    } catch {
+      services = [];
+    }
+  }
+
+  // 3. Providers matching by business name (client-side from already-loaded list)
+  const lower = q.toLowerCase();
+  const matchedProviderIds = new Set(services.map((s) => s.provider?.id).filter(Boolean));
+  const providers = allProviders
+    .filter((p) => {
+      if (matchedProviderIds.has(p.id)) return false; // already in services
+      return (
+        p.businessName?.toLowerCase().includes(lower) ||
+        p.description?.toLowerCase().includes(lower) ||
+        p.address?.toLowerCase().includes(lower)
+      );
+    })
+    .slice(0, 5);
+
+  return { categories: matchedCategories, services, providers };
+}
+
 const ALL_DEMO_SLOTS = ['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00'];
 
 export async function getProviderSlots(mode, providerId, date) {

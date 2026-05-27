@@ -13,12 +13,12 @@ import {
   getCategories,
   getProviderDetails,
   getProviderSlots,
+  smartSearch,
   listBookings,
   listFavoriteProviderIds,
   listNearbyProviders,
   listPets,
   listProviders,
-  searchServices,
   toggleFavoriteProvider,
 } from '../lib/api';
 import { formatDate, formatDateTime, formatDuration, formatMoney, relativeLabel } from '../lib/format';
@@ -219,10 +219,10 @@ async function loadSavedLocation() {
   }
 }
 
-export function NearbyServicesScreen({ navigate }) {
+export function NearbyServicesScreen({ navigate, route }) {
   const { palette: p, dark } = useTheme();
   const t = useT();
-  const [category, setCategory] = useState(getCategories()[0].slug);
+  const [category, setCategory] = useState(route?.params?.category || getCategories()[0].slug);
   const [radiusKm, setRadiusKm] = useState(5);
   const [providers, setProviders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -514,9 +514,16 @@ export function DiscoverScreen({ navigate, route }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState([]);
+  const [searchResults, setSearchResults] = useState({ categories: [], services: [], providers: [] });
   const [searching, setSearching] = useState(false);
   const searchTimer = useRef(null);
+  const savedCoordsRef = useRef(null);
+
+  useEffect(() => {
+    AsyncStorage.getItem('@mypet_location')
+      .then((raw) => { if (raw) { const loc = JSON.parse(raw); savedCoordsRef.current = loc.coords; } })
+      .catch(() => {});
+  }, []);
 
   function load(isRefresh = false) {
     if (isRefresh) setRefreshing(true);
@@ -535,13 +542,17 @@ export function DiscoverScreen({ navigate, route }) {
   function handleSearchChange(text) {
     setSearchQuery(text);
     if (searchTimer.current) clearTimeout(searchTimer.current);
-    if (text.trim().length < 2) { setSearchResults([]); setSearching(false); return; }
+    if (text.trim().length < 2) {
+      setSearchResults({ categories: [], services: [], providers: [] });
+      setSearching(false);
+      return;
+    }
     setSearching(true);
     searchTimer.current = setTimeout(async () => {
-      const results = await searchServices(mode, text.trim(), null);
+      const results = await smartSearch(mode, text.trim(), savedCoordsRef.current, allProviders);
       setSearchResults(results);
       setSearching(false);
-    }, 400);
+    }, 350);
   }
 
   function toggleCategory(slug) {
@@ -587,24 +598,64 @@ export function DiscoverScreen({ navigate, route }) {
 
       {isSearching ? (
         <>
-          <SectionTitle
-            title={t('search_results')}
-            subtitle={searching ? t('loading') : `${searchResults.length}`}
-          />
           {searching ? (
             <SkeletonCard />
-          ) : searchResults.length === 0 ? (
-            <EmptyState icon="magnify-close" title={t('search_empty')} subtitle={t('search_empty_sub')} />
           ) : (
-            searchResults.map((item) => (
-              <ServiceSearchItem
-                key={item.id}
-                item={item}
-                p={p}
-                t={t}
-                onPress={() => navigate('provider', { providerId: item.provider.id })}
-              />
-            ))
+            (() => {
+              const { categories: cats, services: svcs, providers: provs } = searchResults;
+              const hasAny = cats.length > 0 || svcs.length > 0 || provs.length > 0;
+              if (!hasAny) return <EmptyState icon="magnify-close" title={t('search_empty')} subtitle={t('search_empty_sub')} />;
+              return (
+                <>
+                  {cats.length > 0 ? (
+                    <>
+                      <SectionTitle title="Категории" />
+                      <View style={styles.searchCatRow}>
+                        {cats.map((cat) => (
+                          <Pressable
+                            key={cat.slug}
+                            style={[styles.searchCatChip, { backgroundColor: p.surfaceMuted, borderColor: p.line }]}
+                            onPress={() => navigate('nearby', { category: cat.slug })}
+                          >
+                            <MaterialCommunityIcons name={cat.icon} size={18} color={p.brand} />
+                            <Text style={[styles.searchCatLabel, { color: p.ink }]}>{t(`cat_${cat.slug.toLowerCase()}`)}</Text>
+                            <MaterialCommunityIcons name="chevron-right" size={16} color={p.inkSoft} />
+                          </Pressable>
+                        ))}
+                      </View>
+                    </>
+                  ) : null}
+
+                  {svcs.length > 0 ? (
+                    <>
+                      <SectionTitle title="Услуги" subtitle={`${svcs.length}`} />
+                      {svcs.map((item) => (
+                        <ServiceSearchItem
+                          key={item.id}
+                          item={item}
+                          p={p}
+                          t={t}
+                          onPress={() => navigate('provider', { providerId: item.provider.id })}
+                        />
+                      ))}
+                    </>
+                  ) : null}
+
+                  {provs.length > 0 ? (
+                    <>
+                      <SectionTitle title="Провайдеры" subtitle={`${provs.length}`} />
+                      {provs.map((provider) => (
+                        <ProviderListItem
+                          key={provider.id}
+                          provider={provider}
+                          onPress={() => navigate('provider', { providerId: provider.id })}
+                        />
+                      ))}
+                    </>
+                  ) : null}
+                </>
+              );
+            })()
           )}
         </>
       ) : (
@@ -1232,6 +1283,24 @@ const styles = StyleSheet.create({
   },
   serviceCardMetaText: {
     fontSize: 12,
+    fontFamily: typography.body,
+  },
+  searchCatRow: {
+    gap: spacing.xs,
+  },
+  searchCatChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 14,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+  },
+  searchCatLabel: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '600',
     fontFamily: typography.body,
   },
   locationBar: {
