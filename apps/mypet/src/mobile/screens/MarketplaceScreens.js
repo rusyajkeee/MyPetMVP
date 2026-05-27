@@ -700,7 +700,7 @@ export function BookingScreen({ navigate, route }) {
     setSubmitting(true);
     try {
       hapticLight();
-      const scheduledAt = `${selectedDay}T${selectedTime}:00.000Z`;
+      const scheduledAt = `${selectedDay}T${selectedTime}:00.000+05:00`;
       await createBooking(mode, {
         serviceId: selectedServiceId,
         petId: selectedPetId || undefined,

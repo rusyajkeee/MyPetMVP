@@ -79,7 +79,7 @@ export default function BookingForm() {
     if (!datePart) { setError('Please select a date.'); return; }
     setSubmitting(true);
     try {
-      const scheduledAt = `${datePart}T${timePart}:00.000Z`;
+      const scheduledAt = `${datePart}T${timePart}:00.000+05:00`;
       await api.post('/bookings', {
         serviceId,
         petId: petId || undefined,

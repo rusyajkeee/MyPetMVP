@@ -213,8 +213,11 @@ router.get('/:id/slots', async (req, res, next) => {
     const provider = await prisma.provider.findUnique({ where: { id: req.params.id }, select: { id: true } });
     if (!provider) return res.status(404).json({ error: 'Provider not found' });
 
-    const dayStart = new Date(`${date}T00:00:00.000Z`);
-    const dayEnd = new Date(`${date}T23:59:59.999Z`);
+    const KZ_OFFSET_MS = 5 * 60 * 60 * 1000; // UTC+5
+
+    // Query bookings for the full Kazakhstan calendar day
+    const dayStart = new Date(`${date}T00:00:00.000+05:00`);
+    const dayEnd   = new Date(`${date}T23:59:59.999+05:00`);
     const booked = await prisma.booking.findMany({
       where: {
         providerId: provider.id,
@@ -224,17 +227,24 @@ router.get('/:id/slots', async (req, res, next) => {
       select: { scheduledAt: true },
     });
 
-    const bookedTimes = new Set(booked.map((b) => b.scheduledAt.toISOString().slice(11, 16)));
+    // Convert stored UTC times → KZ times for comparison with slot labels
+    const bookedTimes = new Set(booked.map((b) => {
+      const kzDate = new Date(b.scheduledAt.getTime() + KZ_OFFSET_MS);
+      const h = String(kzDate.getUTCHours()).padStart(2, '0');
+      const m = String(kzDate.getUTCMinutes()).padStart(2, '0');
+      return `${h}:${m}`;
+    }));
 
-    // Mark past slots unavailable when the requested date is today (UTC)
-    const now = new Date();
-    const todayUTC = now.toISOString().slice(0, 10);
-    const nowMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
+    // Past-slot check: use current Kazakhstan time
+    const now   = new Date();
+    const kzNow = new Date(now.getTime() + KZ_OFFSET_MS);
+    const kzTodayDate  = kzNow.toISOString().slice(0, 10);
+    const kzNowMinutes = kzNow.getUTCHours() * 60 + kzNow.getUTCMinutes();
 
     res.json({
       slots: BOOKING_SLOTS.map((time) => {
         const [h, m] = time.split(':').map(Number);
-        const isPast = date === todayUTC && (h * 60 + m) <= nowMinutes;
+        const isPast = date === kzTodayDate && (h * 60 + m) <= kzNowMinutes;
         return { time, available: !bookedTimes.has(time) && !isPast };
       }),
     });
