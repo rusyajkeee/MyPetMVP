@@ -26,7 +26,6 @@ import {
   SectionTitle,
   SecondaryButton,
   StatusBadge,
-  ThemeToggle,
 } from '../ui';
 import { lightPalette, radius, spacing, typography } from '../theme';
 
