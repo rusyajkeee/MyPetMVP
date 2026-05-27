@@ -656,11 +656,33 @@ const CATEGORY_SYNONYMS = [
   },
 ];
 
+// Split string into tokens, ignoring short particles
+function tokenize(str) {
+  return str.toLowerCase().split(/[\s\-\/,]+/).filter(w => w.length >= 2);
+}
+
+// Check if queryToken is a prefix of any word in the synonym, or synonym contains the token
+function tokenMatchesSynonym(qt, synTokens, synFull) {
+  if (synFull.includes(qt)) return true;              // "купание".includes("куп") ✓
+  return synTokens.some(st => st.startsWith(qt));     // "купание".startsWith("куп") ✓
+}
+
 function matchCategoriesByQuery(q) {
   const lower = q.toLowerCase().trim();
+  const queryTokens = tokenize(lower);
+
   return CATEGORY_SYNONYMS
     .filter(({ synonyms }) =>
-      synonyms.some((s) => lower.includes(s) || s.includes(lower))
+      synonyms.some((syn) => {
+        const s = syn.toLowerCase();
+        // 1. Exact substring both ways
+        if (s.includes(lower) || lower.includes(s)) return true;
+        // 2. Prefix token match: every query token prefixes/matches some synonym token
+        const synTokens = tokenize(s);
+        return queryTokens.length > 0 && queryTokens.every(qt =>
+          tokenMatchesSynonym(qt, synTokens, s)
+        );
+      })
     )
     .map(({ slug }) => categories.find((c) => c.slug === slug))
     .filter(Boolean);
@@ -689,14 +711,24 @@ export async function smartSearch(mode, query, userCoords, allProviders = []) {
 
   // 3. Providers matching by business name (client-side from already-loaded list)
   const lower = q.toLowerCase();
+  const qTokens = tokenize(lower);
   const matchedProviderIds = new Set(services.map((s) => s.provider?.id).filter(Boolean));
+
+  function fieldMatchesQuery(field) {
+    if (!field) return false;
+    const f = field.toLowerCase();
+    if (f.includes(lower) || lower.includes(f)) return true;
+    const fTokens = tokenize(f);
+    return qTokens.length > 0 && qTokens.every(qt => tokenMatchesSynonym(qt, fTokens, f));
+  }
+
   const providers = allProviders
     .filter((p) => {
-      if (matchedProviderIds.has(p.id)) return false; // already in services
+      if (matchedProviderIds.has(p.id)) return false;
       return (
-        p.businessName?.toLowerCase().includes(lower) ||
-        p.description?.toLowerCase().includes(lower) ||
-        p.address?.toLowerCase().includes(lower)
+        fieldMatchesQuery(p.businessName) ||
+        fieldMatchesQuery(p.description) ||
+        fieldMatchesQuery(p.address)
       );
     })
     .slice(0, 5);
