@@ -1,6 +1,6 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { Animated, FlatList, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -10,6 +10,7 @@ import { addPet, deleteAllApiNotifications, fetchApiNotifications, fetchApiUnrea
 import { clearNotifications, listNotifications, markAllRead } from '../lib/notifications';
 import { formatDate, formatDateTime, initials, relativeLabel } from '../lib/format';
 import { formatAgeFromBirthDate, validateMedicalCardForm, validatePetForm, validateProfileForm } from '../lib/validation';
+import { PET_SPECIES, getSpeciesIcon } from '../data/petClasses';
 import {
   AvatarBadge,
   DateField,
@@ -454,6 +455,145 @@ function formatRelativeTime(iso) {
   return formatDate(iso);
 }
 
+// ─── PetClassPicker ────────────────────────────────────────────────────────
+
+function PetClassPicker({ visible, onSelect, onClose }) {
+  const { palette: p } = useTheme();
+  const [activeSpecies, setActiveSpecies] = useState(PET_SPECIES[0]);
+  const [search, setSearch] = useState('');
+
+  const isSearching = search.trim().length > 0;
+
+  const breedItems = isSearching
+    ? PET_SPECIES.flatMap((s) =>
+        s.breeds
+          .filter((b) => b.toLowerCase().includes(search.toLowerCase()))
+          .map((b) => ({ breed: b, speciesLabel: s.label, speciesKey: s.key }))
+      )
+    : activeSpecies.breeds.map((b) => ({
+        breed: b,
+        speciesLabel: activeSpecies.label,
+        speciesKey: activeSpecies.key,
+      }));
+
+  function handleSelect(speciesLabel, breed) {
+    onSelect(speciesLabel, breed);
+    setSearch('');
+    onClose();
+  }
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <Pressable style={pickerStyles.overlay} onPress={onClose} />
+      <View style={[pickerStyles.sheet, { backgroundColor: p.bg }]}>
+        <View style={[pickerStyles.handle, { backgroundColor: p.line }]} />
+        <Text style={[pickerStyles.title, { color: p.ink }]}>Выберите вид и породу</Text>
+
+        {/* Species chips */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={pickerStyles.speciesRow}
+        >
+          {PET_SPECIES.map((s) => {
+            const active = !isSearching && activeSpecies.key === s.key;
+            return (
+              <Pressable
+                key={s.key}
+                onPress={() => { setActiveSpecies(s); setSearch(''); }}
+                style={[
+                  pickerStyles.speciesChip,
+                  { backgroundColor: active ? p.accent : p.surfaceMuted, borderColor: active ? p.accent : p.line },
+                ]}
+              >
+                <MaterialCommunityIcons name={s.icon} size={16} color={active ? '#fff' : p.ink} />
+                <Text style={[pickerStyles.speciesLabel, { color: active ? '#fff' : p.ink }]}>{s.label}</Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+
+        {/* Search bar */}
+        <View style={[pickerStyles.searchBar, { backgroundColor: p.surfaceMuted, borderColor: p.line }]}>
+          <MaterialCommunityIcons name="magnify" size={18} color={p.inkSoft} />
+          <TextInput
+            style={[pickerStyles.searchInput, { color: p.ink }]}
+            placeholder="Поиск породы…"
+            placeholderTextColor={p.inkSoft}
+            value={search}
+            onChangeText={setSearch}
+            autoCorrect={false}
+          />
+          {search.length > 0 && (
+            <Pressable onPress={() => setSearch('')}>
+              <MaterialCommunityIcons name="close-circle-outline" size={18} color={p.inkSoft} />
+            </Pressable>
+          )}
+        </View>
+
+        {/* Breed list */}
+        <FlatList
+          data={breedItems}
+          keyExtractor={(item, i) => `${item.speciesKey}_${i}`}
+          keyboardShouldPersistTaps="handled"
+          style={pickerStyles.list}
+          renderItem={({ item }) => (
+            <Pressable
+              onPress={() => handleSelect(item.speciesLabel, item.breed)}
+              style={({ pressed }) => [
+                pickerStyles.breedRow,
+                { borderBottomColor: p.line },
+                pressed && { backgroundColor: p.surfaceMuted },
+              ]}
+            >
+              <Text style={[pickerStyles.breedText, { color: p.ink }]}>{item.breed}</Text>
+              {isSearching && (
+                <Text style={[pickerStyles.breedSub, { color: p.inkSoft }]}>{item.speciesLabel}</Text>
+              )}
+            </Pressable>
+          )}
+          ListEmptyComponent={
+            <Text style={[pickerStyles.empty, { color: p.inkSoft }]}>Ничего не найдено</Text>
+          }
+        />
+      </View>
+    </Modal>
+  );
+}
+
+const pickerStyles = StyleSheet.create({
+  overlay:      { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' },
+  sheet: {
+    position: 'absolute', left: 0, right: 0, bottom: 0,
+    height: '75%', borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    paddingTop: 12, paddingHorizontal: 16, paddingBottom: 16,
+  },
+  handle:       { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
+  title:        { fontSize: 17, fontWeight: '700', marginBottom: 14 },
+  speciesRow:   { paddingBottom: 12, gap: 8, flexDirection: 'row' },
+  speciesChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 12, paddingVertical: 7,
+    borderRadius: 20, borderWidth: 1,
+  },
+  speciesLabel: { fontSize: 13, fontWeight: '600' },
+  searchBar: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: 12, paddingVertical: 10,
+    borderRadius: 14, borderWidth: 1, marginBottom: 10,
+  },
+  searchInput:  { flex: 1, fontSize: 14 },
+  list:         { flex: 1 },
+  breedRow: {
+    paddingVertical: 14, paddingHorizontal: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+  },
+  breedText:    { fontSize: 15, fontWeight: '500' },
+  breedSub:     { fontSize: 12 },
+  empty:        { textAlign: 'center', paddingTop: 32, fontSize: 14 },
+});
+
 // ─── Pets ──────────────────────────────────────────────────────────────────
 
 export function PetsScreen({ navigate }) {
@@ -464,6 +604,7 @@ export function PetsScreen({ navigate }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const [pickerVisible, setPickerVisible] = useState(false);
   const [form, setForm] = useState({
     name: '', breed: '', species: '', gender: '', birthDate: '', age: '', weight: '', color: '',
   });
@@ -541,14 +682,47 @@ export function PetsScreen({ navigate }) {
         ))
       )}
 
+      <PetClassPicker
+        visible={pickerVisible}
+        onClose={() => setPickerVisible(false)}
+        onSelect={(species, breed) => {
+          setField('species', species);
+          setField('breed', breed);
+        }}
+      />
+
       <GlassCard style={styles.formPanel}>
-        <SectionTitle title={t('pets_add')} subtitle="Only the essentials." />
-        <Field label={t('pets_name')}    value={form.name}   onChangeText={(v) => setField('name', v)}   placeholder="Luna" />
-        <Field label={t('pets_breed')}   value={form.breed}  onChangeText={(v) => setField('breed', v)}  placeholder="Poodle" />
-        <Field label={t('pets_species')} value={form.species} onChangeText={(v) => setField('species', v)} placeholder="Dog, cat…" />
+        <SectionTitle title={t('pets_add')} subtitle="Только самое важное." />
+        <Field label={t('pets_name')} value={form.name} onChangeText={(v) => setField('name', v)} placeholder="Луна" />
+
+        {/* Species + breed picker button */}
+        <Pressable
+          onPress={() => setPickerVisible(true)}
+          style={({ pressed }) => [
+            styles.pickerBtn,
+            { backgroundColor: p.surfaceMuted, borderColor: p.line },
+            pressed && { opacity: 0.75 },
+          ]}
+        >
+          <MaterialCommunityIcons
+            name={getSpeciesIcon(form.species)}
+            size={22}
+            color={form.species ? p.accent : p.inkSoft}
+          />
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.pickerBtnLabel, { color: p.inkSoft }]}>Вид и порода</Text>
+            <Text style={[styles.pickerBtnValue, { color: form.species ? p.ink : p.inkSoft }]}>
+              {form.species && form.breed
+                ? `${form.species} · ${form.breed}`
+                : 'Выбрать…'}
+            </Text>
+          </View>
+          <MaterialCommunityIcons name="chevron-right" size={20} color={p.inkSoft} />
+        </Pressable>
+
         <View style={styles.row}>
           <View style={styles.rowCell}>
-            <Field label={t('pets_gender')} value={form.gender} onChangeText={(v) => setField('gender', v)} placeholder="Female" />
+            <Field label={t('pets_gender')} value={form.gender} onChangeText={(v) => setField('gender', v)} placeholder="Самка" />
           </View>
           <View style={styles.rowCell}>
             <DateField label={t('pets_birth')} value={form.birthDate} onChange={(v) => setField('birthDate', v)} maximumDate={new Date()} />
@@ -556,10 +730,10 @@ export function PetsScreen({ navigate }) {
         </View>
         <View style={styles.row}>
           <View style={styles.rowCell}>
-            <Field label={t('pets_weight')} value={form.weight} onChangeText={(v) => setField('weight', v)} placeholder="5 kg" />
+            <Field label={t('pets_weight')} value={form.weight} onChangeText={(v) => setField('weight', v)} placeholder="5 кг" />
           </View>
           <View style={styles.rowCell}>
-            <Field label={t('pets_color')} value={form.color} onChangeText={(v) => setField('color', v)} placeholder="White" />
+            <Field label={t('pets_color')} value={form.color} onChangeText={(v) => setField('color', v)} placeholder="Белый" />
           </View>
         </View>
         <PrimaryButton label={t('pets_save')} icon="content-save-outline" onPress={handleAddPet} />
@@ -1066,6 +1240,26 @@ const styles = StyleSheet.create({
   },
   formPanel: {
     gap: spacing.md,
+  },
+  pickerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  pickerBtnLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  pickerBtnValue: {
+    fontSize: 15,
+    fontWeight: '500',
   },
   row: {
     flexDirection: 'row',
