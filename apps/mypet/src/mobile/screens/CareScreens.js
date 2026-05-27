@@ -983,9 +983,6 @@ export function ProfileScreen() {
     <Screen>
       <AvatarBadge label={label} sublabel={user?.email || 'owner@mypet.app'} initials={initials(user)} accent={['#111315']} />
 
-      <View style={styles.metricRow}>
-        <MetricTile icon="cellphone-marker" label={t('profile_mode')} value={mode === 'demo' ? t('profile_preview') : t('profile_live')} />
-      </View>
 
       {saved ? <Notice tone="success" icon="check-circle-outline" body={t('profile_saved')} /> : null}
       {error ? <Notice tone="danger"  icon="alert-circle"         body={error}              /> : null}

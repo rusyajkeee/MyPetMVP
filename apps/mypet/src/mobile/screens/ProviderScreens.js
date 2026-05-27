@@ -520,9 +520,6 @@ export function ProviderProfileScreen() {
         accent={['#0F3D2E']}
       />
 
-      <View style={styles.metricRow}>
-        <StatTile icon="cellphone-marker" label={t('profile_mode')} value="Provider" tone="success" />
-      </View>
 
       {saved ? <Notice tone="success" icon="check-circle-outline" body={t('profile_saved')} /> : null}
       {error ? <Notice tone="danger" icon="alert-circle" body={error} /> : null}
