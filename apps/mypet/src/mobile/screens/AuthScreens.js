@@ -7,6 +7,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useLocale, useT, LOCALES } from '../context/LocaleContext';
 import { hapticLight, hapticSelection } from '../lib/haptics';
 import { validateLoginForm, validateRegisterForm } from '../lib/validation';
+import { submitProviderApplication } from '../lib/api';
 import { Field, GlassCard, HeroTitle, Notice, PrimaryButton, Screen, SecondaryButton } from '../ui';
 import { lightPalette, radius, spacing, typography } from '../theme';
 
@@ -185,11 +186,14 @@ export function LoginScreen({ navigate }) {
 // ─── RegisterScreen ────────────────────────────────────────────────────────
 
 export function RegisterScreen({ navigate }) {
-  const { register, apiConfigured, apiReachable } = useAuth();
+  const { register, apiConfigured, apiReachable, mode } = useAuth();
+  const { palette: p } = useTheme();
   const t = useT();
+  const [isProvider, setIsProvider] = useState(false);
   const [form, setForm] = useState({
     firstName: '', lastName: '', email: '', phone: '', password: '', confirmPassword: '',
   });
+  const [providerForm, setProviderForm] = useState({ businessName: '', address: '' });
   const [tosAccepted, setTosAccepted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -197,16 +201,30 @@ export function RegisterScreen({ navigate }) {
   function setField(key, value) {
     setForm((current) => ({ ...current, [key]: value }));
   }
+  function setProviderField(key, value) {
+    setProviderForm((current) => ({ ...current, [key]: value }));
+  }
 
   async function handleSubmit() {
     const validationError = validateRegisterForm(form, tosAccepted);
     if (validationError) { setError(validationError); return; }
+    if (isProvider) {
+      if (!providerForm.businessName.trim()) { setError('Укажите название организации'); return; }
+      if (!providerForm.address.trim()) { setError('Укажите адрес'); return; }
+    }
     setError('');
     setSubmitting(true);
     try {
       hapticLight();
       const { confirmPassword, ...payload } = form;
       await register({ ...payload, role: 'USER', tosAccepted: true });
+      if (isProvider) {
+        await submitProviderApplication(mode, {
+          businessName: providerForm.businessName.trim(),
+          address: providerForm.address.trim(),
+          phone: form.phone.trim() || undefined,
+        });
+      }
     } catch (currentError) {
       setError(currentError.message || 'Registration failed');
     } finally {
@@ -227,6 +245,23 @@ export function RegisterScreen({ navigate }) {
           ) : null}
           {error ? <Notice tone="danger" icon="alert-circle" body={error} /> : null}
 
+          <View style={styles.roleToggleRow}>
+            <Pressable
+              style={[styles.roleToggleBtn, !isProvider && { backgroundColor: p.brand, borderColor: p.brand }]}
+              onPress={() => setIsProvider(false)}
+            >
+              <MaterialCommunityIcons name="paw" size={16} color={!isProvider ? palette.white : p.inkSoft} />
+              <Text style={[styles.roleToggleText, { color: !isProvider ? palette.white : p.inkSoft }]}>Клиент</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.roleToggleBtn, isProvider && { backgroundColor: p.brand, borderColor: p.brand }]}
+              onPress={() => setIsProvider(true)}
+            >
+              <MaterialCommunityIcons name="store-outline" size={16} color={isProvider ? palette.white : p.inkSoft} />
+              <Text style={[styles.roleToggleText, { color: isProvider ? palette.white : p.inkSoft }]}>Провайдер</Text>
+            </Pressable>
+          </View>
+
           <View style={styles.row}>
             <View style={styles.rowCell}>
               <Field label={t('auth_first_name')} value={form.firstName} onChangeText={(v) => setField('firstName', v)} placeholder="Aruzhan" autoCapitalize="words" />
@@ -241,6 +276,17 @@ export function RegisterScreen({ navigate }) {
           <Field label={t('auth_password')} value={form.password} onChangeText={(v) => setField('password', v)} placeholder="Min 8 chars, 1 uppercase, 1 digit" secureTextEntry autoCapitalize="none" />
           <Field label={t('auth_confirm_password')} value={form.confirmPassword} onChangeText={(v) => setField('confirmPassword', v)} placeholder={t('auth_confirm_password')} secureTextEntry autoCapitalize="none" />
 
+          {isProvider ? (
+            <>
+              <View style={[styles.providerDivider, { borderColor: p.border }]}>
+                <Text style={[styles.providerDividerText, { color: p.inkSoft }]}>Данные организации</Text>
+              </View>
+              <Field label="Название организации" value={providerForm.businessName} onChangeText={(v) => setProviderField('businessName', v)} placeholder="Veterinary Clinic Barsa" autoCapitalize="words" />
+              <Field label="Адрес" value={providerForm.address} onChangeText={(v) => setProviderField('address', v)} placeholder="ул. Кенесары 40, Астана" autoCapitalize="sentences" />
+              <Notice tone="info" icon="information-outline" body="Заявка будет отправлена администратору. После одобрения вы получите доступ к аккаунту провайдера." />
+            </>
+          ) : null}
+
           <Pressable onPress={() => setTosAccepted((c) => !c)} style={styles.checkRow}>
             <View style={[styles.checkBox, tosAccepted ? styles.checkBoxActive : null]}>
               {tosAccepted ? <MaterialCommunityIcons name="check" size={16} color={palette.white} /> : null}
@@ -248,7 +294,11 @@ export function RegisterScreen({ navigate }) {
             <Text style={[styles.checkText, { color: palette.inkSoft }]}>{t('auth_accept_terms')}</Text>
           </Pressable>
 
-          <PrimaryButton label={submitting ? t('auth_creating') : t('auth_create_account')} onPress={handleSubmit} disabled={submitting} />
+          <PrimaryButton
+            label={submitting ? t('auth_creating') : (isProvider ? 'Отправить заявку' : t('auth_create_account'))}
+            onPress={handleSubmit}
+            disabled={submitting}
+          />
         </GlassCard>
 
         <Pressable onPress={() => navigate('login')} style={styles.inlineLink}>
@@ -392,6 +442,38 @@ const styles = StyleSheet.create({
   inlineLinkText: {
     fontSize: 14,
     fontWeight: '600',
+    fontFamily: typography.body,
+  },
+  roleToggleRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  roleToggleBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderColor: palette.inkSoft + '40',
+  },
+  roleToggleText: {
+    fontSize: 14,
+    fontWeight: '700',
+    fontFamily: typography.body,
+  },
+  providerDivider: {
+    borderTopWidth: 1,
+    paddingTop: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  providerDividerText: {
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
     fontFamily: typography.body,
   },
 });

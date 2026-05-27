@@ -552,10 +552,33 @@ const ALL_DEMO_SLOTS = ['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '1
 
 export async function getProviderSlots(mode, providerId, date) {
   if (mode === 'demo') {
-    return ALL_DEMO_SLOTS.map((time) => ({ time, available: true }));
+    return { slots: ALL_DEMO_SLOTS.map((time) => ({ time, available: true, isPast: false })), staff: [] };
   }
-  const data = await liveRequest('get', `/providers/${providerId}/slots?date=${date}`);
-  return data.slots;
+  return liveRequest('get', `/providers/${providerId}/slots?date=${date}`);
+}
+
+export async function getProviderStaff(providerId) {
+  return liveRequest('get', `/providers/${providerId}/staff`);
+}
+
+export async function listMyStaff(mode) {
+  if (mode === 'demo') return [];
+  return liveRequest('get', '/providers/me/staff');
+}
+
+export async function createStaff(mode, data) {
+  if (mode === 'demo') return null;
+  return liveRequest('post', '/providers/me/staff', { data });
+}
+
+export async function updateStaff(mode, staffId, data) {
+  if (mode === 'demo') return null;
+  return liveRequest('patch', `/providers/me/staff/${staffId}`, { data });
+}
+
+export async function deleteStaff(mode, staffId) {
+  if (mode === 'demo') return null;
+  return liveRequest('delete', `/providers/me/staff/${staffId}`);
 }
 
 export async function createBooking(mode, payload) {
@@ -780,6 +803,20 @@ export async function fetchApiUnreadCount(mode) {
 export async function markApiNotificationsRead(mode) {
   if (mode !== 'live') return;
   await liveRequest('post', '/notifications/read-all').catch(() => {});
+}
+
+export async function submitProviderApplication(mode, data) {
+  if (mode === 'demo') return null;
+  return liveRequest('post', '/provider-applications', { data });
+}
+
+export async function getMyProviderApplication(mode) {
+  if (mode === 'demo') return null;
+  try {
+    return await liveRequest('get', '/provider-applications/my');
+  } catch {
+    return null;
+  }
 }
 
 export async function deleteAllApiNotifications(mode) {

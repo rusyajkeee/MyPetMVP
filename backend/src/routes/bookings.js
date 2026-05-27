@@ -18,6 +18,7 @@ const createBookingSchema = z.object({
   petId: z.string().optional(),
   scheduledAt: z.string().datetime(),
   notes: z.string().optional(),
+  staffId: z.string().optional(),
 });
 
 /**
@@ -39,27 +40,56 @@ router.post('/', authMiddleware, attachUser, requireRole('USER', 'ADMIN'), async
       const pet = await prisma.pet.findFirst({ where: { id: data.petId, ownerId: req.userId } });
       if (!pet) return res.status(400).json({ error: 'Pet not found' });
     }
+    // Check if provider has staff
+    const providerStaff = await prisma.staff.findMany({
+      where: { providerId: service.providerId },
+      select: { id: true, name: true },
+    });
+    const hasStaff = providerStaff.length > 0;
+
     let booking;
     try {
       booking = await prisma.$transaction(async (tx) => {
-        const conflict = await tx.booking.findFirst({
-          where: {
-            providerId: service.providerId,
-            scheduledAt,
-            status: { in: ['PENDING', 'ACCEPTED', 'IN_PROGRESS'] },
-          },
-        });
-        if (conflict) {
-          const err = new Error('SLOT_TAKEN');
-          err.status = 409;
-          throw err;
+        let assignedStaffId = data.staffId || null;
+
+        if (hasStaff) {
+          if (assignedStaffId) {
+            const staffMember = providerStaff.find(s => s.id === assignedStaffId);
+            if (!staffMember) throw Object.assign(new Error('STAFF_NOT_FOUND'), { status: 400 });
+            const conflict = await tx.booking.findFirst({
+              where: { staffId: assignedStaffId, scheduledAt, status: { in: ['PENDING', 'ACCEPTED', 'IN_PROGRESS'] } },
+            });
+            if (conflict) throw Object.assign(new Error('SLOT_TAKEN'), { status: 409 });
+          } else {
+            // Auto-assign: find first available staff member
+            const busyRows = await tx.booking.findMany({
+              where: {
+                staffId: { in: providerStaff.map(s => s.id) },
+                scheduledAt,
+                status: { in: ['PENDING', 'ACCEPTED', 'IN_PROGRESS'] },
+              },
+              select: { staffId: true },
+            });
+            const busySet = new Set(busyRows.map(b => b.staffId));
+            const freeStaff = providerStaff.find(s => !busySet.has(s.id));
+            if (!freeStaff) throw Object.assign(new Error('SLOT_TAKEN'), { status: 409 });
+            assignedStaffId = freeStaff.id;
+          }
+        } else {
+          // No staff — provider-level conflict check
+          const conflict = await tx.booking.findFirst({
+            where: { providerId: service.providerId, scheduledAt, status: { in: ['PENDING', 'ACCEPTED', 'IN_PROGRESS'] } },
+          });
+          if (conflict) throw Object.assign(new Error('SLOT_TAKEN'), { status: 409 });
         }
+
         return tx.booking.create({
           data: {
             userId: req.userId,
             providerId: service.providerId,
             serviceId: service.id,
             petId: data.petId,
+            staffId: assignedStaffId,
             scheduledAt,
             notes: data.notes,
             status: 'PENDING',
@@ -68,12 +98,16 @@ router.post('/', authMiddleware, attachUser, requireRole('USER', 'ADMIN'), async
             service: true,
             provider: { include: { user: { select: { firstName: true, lastName: true } } } },
             pet: true,
+            staff: { select: { id: true, name: true, role: true } },
           },
         });
       }, { isolationLevel: 'Serializable' });
     } catch (e) {
       if (e.message === 'SLOT_TAKEN') {
         return res.status(409).json({ error: 'This time slot is already booked. Please choose another time.' });
+      }
+      if (e.message === 'STAFF_NOT_FOUND') {
+        return res.status(400).json({ error: 'Staff member not found.' });
       }
       throw e;
     }

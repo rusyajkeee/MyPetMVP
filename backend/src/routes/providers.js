@@ -46,9 +46,9 @@ function haversine(lat1, lon1, lat2, lon2) {
   const R = 6371; // Earth radius in km
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = 
+  const a =
     Math.sin(dLat/2) * Math.sin(dLat/2) +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
     Math.sin(dLon/2) * Math.sin(dLon/2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
   return R * c;
@@ -128,6 +128,12 @@ const createProviderSchema = z.object({
   category: providerCategoryEnum.optional(),
 });
 
+const createStaffSchema = z.object({
+  name: z.string().min(1),
+  role: z.string().optional(),
+  avatarUrl: z.string().optional(),
+});
+
 // Protected provider routes (must be before /:id so /me is not captured as id)
 
 router.get('/me/bookings', authMiddleware, attachUser, requireRole('PROVIDER', 'ADMIN'), async (req, res, next) => {
@@ -140,6 +146,7 @@ router.get('/me/bookings', authMiddleware, attachUser, requireRole('PROVIDER', '
         service: true,
         user: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
         pet: true,
+        staff: { select: { id: true, name: true, role: true } },
         review: { select: { id: true } },
       },
       orderBy: { scheduledAt: 'desc' },
@@ -176,6 +183,62 @@ router.get('/me/stats', authMiddleware, attachUser, requireRole('PROVIDER', 'ADM
   }
 });
 
+// Staff management — own (provider-auth required)
+router.get('/me/staff', authMiddleware, attachUser, requireRole('PROVIDER', 'ADMIN'), async (req, res, next) => {
+  try {
+    const provider = await prisma.provider.findUnique({ where: { userId: req.userId } });
+    if (!provider) return res.json([]);
+    const staff = await prisma.staff.findMany({
+      where: { providerId: provider.id },
+      orderBy: { createdAt: 'asc' },
+    });
+    res.json(staff);
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.post('/me/staff', authMiddleware, attachUser, requireRole('PROVIDER', 'ADMIN'), async (req, res, next) => {
+  try {
+    const data = createStaffSchema.parse(req.body);
+    const provider = await prisma.provider.findUnique({ where: { userId: req.userId } });
+    if (!provider) return res.status(400).json({ error: 'Provider profile not found' });
+    const member = await prisma.staff.create({ data: { providerId: provider.id, ...data } });
+    res.status(201).json(member);
+  } catch (e) {
+    if (e.name === 'ZodError') return res.status(400).json({ error: e.errors?.[0]?.message });
+    next(e);
+  }
+});
+
+router.patch('/me/staff/:staffId', authMiddleware, attachUser, requireRole('PROVIDER', 'ADMIN'), async (req, res, next) => {
+  try {
+    const data = createStaffSchema.partial().parse(req.body);
+    const provider = await prisma.provider.findUnique({ where: { userId: req.userId } });
+    if (!provider) return res.status(403).json({ error: 'Forbidden' });
+    const member = await prisma.staff.findFirst({ where: { id: req.params.staffId, providerId: provider.id } });
+    if (!member) return res.status(404).json({ error: 'Staff not found' });
+    const updated = await prisma.staff.update({ where: { id: req.params.staffId }, data });
+    res.json(updated);
+  } catch (e) {
+    if (e.name === 'ZodError') return res.status(400).json({ error: e.errors?.[0]?.message });
+    next(e);
+  }
+});
+
+router.delete('/me/staff/:staffId', authMiddleware, attachUser, requireRole('PROVIDER', 'ADMIN'), async (req, res, next) => {
+  try {
+    const provider = await prisma.provider.findUnique({ where: { userId: req.userId } });
+    if (!provider) return res.status(403).json({ error: 'Forbidden' });
+    const member = await prisma.staff.findFirst({ where: { id: req.params.staffId, providerId: provider.id } });
+    if (!member) return res.status(404).json({ error: 'Staff not found' });
+    await prisma.staff.delete({ where: { id: req.params.staffId } });
+    res.json({ ok: true });
+  } catch (e) {
+    next(e);
+  }
+});
+
 router.get('/me', authMiddleware, attachUser, requireRole('PROVIDER', 'ADMIN'), async (req, res, next) => {
   try {
     const provider = await prisma.provider.findUnique({ where: { userId: req.userId }, include: { services: true } });
@@ -204,6 +267,19 @@ router.post('/me', authMiddleware, attachUser, requireRole('PROVIDER', 'ADMIN'),
 
 const BOOKING_SLOTS = ['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00'];
 
+// Public staff list for a provider
+router.get('/:id/staff', async (req, res, next) => {
+  try {
+    const staff = await prisma.staff.findMany({
+      where: { providerId: req.params.id },
+      orderBy: { createdAt: 'asc' },
+    });
+    res.json(staff);
+  } catch (e) {
+    next(e);
+  }
+});
+
 router.get('/:id/slots', async (req, res, next) => {
   try {
     const { date } = req.query;
@@ -213,41 +289,82 @@ router.get('/:id/slots', async (req, res, next) => {
     const provider = await prisma.provider.findUnique({ where: { id: req.params.id }, select: { id: true } });
     if (!provider) return res.status(404).json({ error: 'Provider not found' });
 
-    const KZ_OFFSET_MS = 5 * 60 * 60 * 1000; // UTC+5
-
-    // Query bookings for the full Kazakhstan calendar day
+    const KZ_OFFSET_MS = 5 * 60 * 60 * 1000;
     const dayStart = new Date(`${date}T00:00:00.000+05:00`);
     const dayEnd   = new Date(`${date}T23:59:59.999+05:00`);
-    const booked = await prisma.booking.findMany({
-      where: {
-        providerId: provider.id,
-        scheduledAt: { gte: dayStart, lte: dayEnd },
-        status: { in: ['PENDING', 'ACCEPTED', 'IN_PROGRESS'] },
-      },
-      select: { scheduledAt: true },
-    });
-
-    // Convert stored UTC times → KZ times for comparison with slot labels
-    const bookedTimes = new Set(booked.map((b) => {
-      const kzDate = new Date(b.scheduledAt.getTime() + KZ_OFFSET_MS);
-      const h = String(kzDate.getUTCHours()).padStart(2, '0');
-      const m = String(kzDate.getUTCMinutes()).padStart(2, '0');
-      return `${h}:${m}`;
-    }));
-
-    // Past-slot check: use current Kazakhstan time
-    const now   = new Date();
-    const kzNow = new Date(now.getTime() + KZ_OFFSET_MS);
+    const now      = new Date();
+    const kzNow    = new Date(now.getTime() + KZ_OFFSET_MS);
     const kzTodayDate  = kzNow.toISOString().slice(0, 10);
     const kzNowMinutes = kzNow.getUTCHours() * 60 + kzNow.getUTCMinutes();
 
-    res.json({
-      slots: BOOKING_SLOTS.map((time) => {
+    const staffList = await prisma.staff.findMany({
+      where: { providerId: req.params.id },
+      select: { id: true, name: true, role: true, avatarUrl: true },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    if (staffList.length > 0) {
+      // Per-staff busy slots
+      const booked = await prisma.booking.findMany({
+        where: {
+          providerId: req.params.id,
+          scheduledAt: { gte: dayStart, lte: dayEnd },
+          status: { in: ['PENDING', 'ACCEPTED', 'IN_PROGRESS'] },
+          staffId: { in: staffList.map(s => s.id) },
+        },
+        select: { scheduledAt: true, staffId: true },
+      });
+
+      const staffBusyMap = new Map(); // staffId → Set<time>
+      for (const b of booked) {
+        const kzDate = new Date(b.scheduledAt.getTime() + KZ_OFFSET_MS);
+        const h = String(kzDate.getUTCHours()).padStart(2, '0');
+        const m = String(kzDate.getUTCMinutes()).padStart(2, '0');
+        const time = `${h}:${m}`;
+        if (!staffBusyMap.has(b.staffId)) staffBusyMap.set(b.staffId, new Set());
+        staffBusyMap.get(b.staffId).add(time);
+      }
+
+      const staff = staffList.map(s => ({
+        ...s,
+        busySlots: Array.from(staffBusyMap.get(s.id) || []),
+      }));
+
+      const slots = BOOKING_SLOTS.map((time) => {
         const [h, m] = time.split(':').map(Number);
         const isPast = date === kzTodayDate && (h * 60 + m) <= kzNowMinutes;
-        return { time, available: !bookedTimes.has(time) && !isPast };
-      }),
-    });
+        const available = !isPast && staffList.some(s => !(staffBusyMap.get(s.id) || new Set()).has(time));
+        return { time, available, isPast };
+      });
+
+      res.json({ slots, staff });
+    } else {
+      // No staff — provider-level availability
+      const booked = await prisma.booking.findMany({
+        where: {
+          providerId: provider.id,
+          scheduledAt: { gte: dayStart, lte: dayEnd },
+          status: { in: ['PENDING', 'ACCEPTED', 'IN_PROGRESS'] },
+        },
+        select: { scheduledAt: true },
+      });
+
+      const bookedTimes = new Set(booked.map((b) => {
+        const kzDate = new Date(b.scheduledAt.getTime() + KZ_OFFSET_MS);
+        const h = String(kzDate.getUTCHours()).padStart(2, '0');
+        const m = String(kzDate.getUTCMinutes()).padStart(2, '0');
+        return `${h}:${m}`;
+      }));
+
+      res.json({
+        staff: [],
+        slots: BOOKING_SLOTS.map((time) => {
+          const [h, m] = time.split(':').map(Number);
+          const isPast = date === kzTodayDate && (h * 60 + m) <= kzNowMinutes;
+          return { time, available: !bookedTimes.has(time) && !isPast, isPast };
+        }),
+      });
+    }
   } catch (e) {
     next(e);
   }

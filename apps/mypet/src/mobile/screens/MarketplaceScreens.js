@@ -654,8 +654,22 @@ export function BookingScreen({ navigate, route }) {
   });
   const [selectedTime, setSelectedTime] = useState('11:00');
   const [notes, setNotes] = useState('');
-  const [slots, setSlots] = useState([]);
+  const [baseSlots, setBaseSlots] = useState([]);
+  const [staffList, setStaffList] = useState([]);
+  const [selectedStaffId, setSelectedStaffId] = useState('');
   const [slotsLoading, setSlotsLoading] = useState(false);
+
+  function computeEffectiveSlots(slots, staff, staffId) {
+    if (!staff || staff.length === 0 || !staffId) return slots;
+    const member = staff.find(s => s.id === staffId);
+    if (!member) return slots;
+    return slots.map(slot => ({
+      ...slot,
+      available: !slot.isPast && !(member.busySlots || []).includes(slot.time),
+    }));
+  }
+
+  const effectiveSlots = computeEffectiveSlots(baseSlots, staffList, selectedStaffId);
 
   useEffect(() => {
     let active = true;
@@ -675,16 +689,18 @@ export function BookingScreen({ navigate, route }) {
     if (!providerId || !selectedDay) return;
     let active = true;
     setSlotsLoading(true);
+    setSelectedStaffId('');
     getProviderSlots(mode, providerId, selectedDay)
-      .then((nextSlots) => {
+      .then(({ slots: nextSlots, staff: nextStaff }) => {
         if (!active) return;
-        setSlots(nextSlots);
+        setBaseSlots(nextSlots);
+        setStaffList(nextStaff || []);
         const availableSlot = nextSlots.find((s) => s.available);
         if (availableSlot && !nextSlots.find((s) => s.time === selectedTime && s.available)) {
           setSelectedTime(availableSlot.time);
         }
       })
-      .catch(() => { if (active) setSlots([]); })
+      .catch(() => { if (active) { setBaseSlots([]); setStaffList([]); } })
       .finally(() => { if (active) setSlotsLoading(false); });
     return () => { active = false; };
   }, [mode, providerId, selectedDay]);
@@ -706,6 +722,7 @@ export function BookingScreen({ navigate, route }) {
         petId: selectedPetId || undefined,
         scheduledAt,
         notes: notes.trim() || undefined,
+        staffId: selectedStaffId || undefined,
         _providerSnapshot: provider,
       });
       setStep('done');
@@ -733,6 +750,7 @@ export function BookingScreen({ navigate, route }) {
   const selectedService = provider.services?.find((s) => s.id === selectedServiceId);
   const selectedPet = pets.find((pet) => pet.id === selectedPetId);
   const dayLabel = days.find((d) => d.value === selectedDay)?.label || selectedDay;
+  const selectedMaster = staffList.find(s => s.id === selectedStaffId);
 
   if (step === 'done') {
     return (
@@ -748,6 +766,7 @@ export function BookingScreen({ navigate, route }) {
           <SummaryRow icon="store-outline" label={t('booking_provider_label')} value={provider.businessName} />
           <SummaryRow icon="tag-outline" label={t('booking_service_label')} value={selectedService?.title} />
           <SummaryRow icon="calendar-outline" label={t('booking_date_label')} value={`${dayLabel} ${selectedTime}`} />
+          {selectedMaster ? <SummaryRow icon="account-outline" label="Мастер" value={selectedMaster.name} /> : null}
           {selectedPet ? <SummaryRow icon="paw-outline" label={t('booking_pet_label')} value={selectedPet.name} /> : null}
         </GlassCard>
         <PrimaryButton label={t('booking_view_bookings')} icon="calendar-check-outline" onPress={() => navigate('bookings')} />
@@ -774,6 +793,7 @@ export function BookingScreen({ navigate, route }) {
             <SummaryRow icon="clock-outline" label={t('booking_duration_label')} value={formatDuration(selectedService.durationMin)} />
           ) : null}
           <SummaryRow icon="calendar-outline" label={t('booking_date_label')} value={`${dayLabel} ${selectedTime}`} />
+          {selectedMaster ? <SummaryRow icon="account-outline" label="Мастер" value={`${selectedMaster.name}${selectedMaster.role ? ` · ${selectedMaster.role}` : ''}`} /> : null}
           {selectedPet ? (
             <SummaryRow
               icon="paw-outline"
@@ -832,12 +852,54 @@ export function BookingScreen({ navigate, route }) {
         ))}
       </View>
 
+      {staffList.length > 0 ? (
+        <>
+          <SectionTitle title="Мастер" subtitle="Выберите или оставьте автоматически" />
+          <View style={styles.stack}>
+            <Pressable
+              onPress={() => { hapticSelection(); setSelectedStaffId(''); }}
+              style={({ pressed }) => [
+                styles.optionCard,
+                { backgroundColor: !selectedStaffId ? p.surfaceMuted : p.surface, borderColor: !selectedStaffId ? p.ink : p.line },
+                pressed ? styles.pressed : null,
+              ]}
+            >
+              <View style={styles.optionCopy}>
+                <Text style={[styles.optionTitle, { color: p.ink }]}>Любой мастер</Text>
+                <Text style={[styles.optionMeta, { color: p.inkSoft }]}>Приложение выберет первого свободного</Text>
+              </View>
+              <View style={[styles.optionBullet, { borderColor: !selectedStaffId ? p.ink : p.line, backgroundColor: !selectedStaffId ? p.ink : 'transparent' }]} />
+            </Pressable>
+            {staffList.map((member) => {
+              const active = selectedStaffId === member.id;
+              return (
+                <Pressable
+                  key={member.id}
+                  onPress={() => { hapticSelection(); setSelectedStaffId(member.id); }}
+                  style={({ pressed }) => [
+                    styles.optionCard,
+                    { backgroundColor: active ? p.surfaceMuted : p.surface, borderColor: active ? p.ink : p.line },
+                    pressed ? styles.pressed : null,
+                  ]}
+                >
+                  <View style={styles.optionCopy}>
+                    <Text style={[styles.optionTitle, { color: p.ink }]}>{member.name}</Text>
+                    {member.role ? <Text style={[styles.optionMeta, { color: p.inkSoft }]}>{member.role}</Text> : null}
+                  </View>
+                  <View style={[styles.optionBullet, { borderColor: active ? p.ink : p.line, backgroundColor: active ? p.ink : 'transparent' }]} />
+                </Pressable>
+              );
+            })}
+          </View>
+        </>
+      ) : null}
+
       <SectionTitle title={t('booking_time')} />
       <View style={styles.pillWrap}>
         {slotsLoading ? (
           <Text style={{ color: p.inkSoft, fontSize: 13, padding: 4 }}>{t('nearby_searching')}</Text>
-        ) : slots.length > 0 ? (
-          slots.map(({ time, available }) => (
+        ) : effectiveSlots.length > 0 ? (
+          effectiveSlots.map(({ time, available }) => (
             <Pill
               key={time}
               label={time}

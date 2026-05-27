@@ -27,6 +27,7 @@ import bookingRoutes from './routes/bookings.js';
 import reviewRoutes from './routes/reviews.js';
 import adminRoutes from './routes/admin.js';
 import notificationRoutes from './routes/notifications.js';
+import providerApplicationRoutes from './routes/provider-applications.js';
 import { setupSwagger } from './config/swagger.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -93,6 +94,7 @@ app.use('/api/bookings', bookingRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/provider-applications', providerApplicationRoutes);
 
 setupSwagger(app);
 

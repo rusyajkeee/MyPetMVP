@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useLocale, useT, LOCALES } from '../context/LocaleContext';
 import { hapticSuccess, hapticError } from '../lib/haptics';
-import { addPet, deleteAllApiNotifications, fetchApiNotifications, fetchApiUnreadCount, getMedicalCard, getProfile, listBookings, listPets, markApiNotificationsRead, saveMedicalCard, submitReview, updateBookingStatus } from '../lib/api';
+import { addPet, deleteAllApiNotifications, fetchApiNotifications, fetchApiUnreadCount, getMedicalCard, getMyProviderApplication, getProfile, listBookings, listPets, markApiNotificationsRead, saveMedicalCard, submitProviderApplication, submitReview, updateBookingStatus } from '../lib/api';
 import { clearNotifications, listNotifications, markAllRead } from '../lib/notifications';
 import { formatDate, formatDateTime, initials, relativeLabel } from '../lib/format';
 import { formatAgeFromBirthDate, validateMedicalCardForm, validatePetForm, validateProfileForm } from '../lib/validation';
@@ -907,6 +907,14 @@ export function ProfileScreen() {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
 
+  // Provider application state
+  const [application, setApplication] = useState(undefined); // undefined = loading
+  const [showApplyForm, setShowApplyForm] = useState(false);
+  const [applyForm, setApplyForm] = useState({ businessName: '', address: '', phone: '', description: '' });
+  const [applyError, setApplyError] = useState('');
+  const [applySubmitting, setApplySubmitting] = useState(false);
+  const [applySuccess, setApplySuccess] = useState(false);
+
   useEffect(() => {
     let active = true;
     getProfile(mode)
@@ -918,7 +926,17 @@ export function ProfileScreen() {
     return () => { active = false; };
   }, [mode]);
 
+  useEffect(() => {
+    if (user?.role !== 'USER') { setApplication(null); return; }
+    let active = true;
+    getMyProviderApplication(mode)
+      .then((app) => { if (active) setApplication(app); })
+      .catch(() => { if (active) setApplication(null); });
+    return () => { active = false; };
+  }, [mode, user?.role]);
+
   function setField(key, value) { setForm((c) => ({ ...c, [key]: value })); }
+  function setApplyField(key, value) { setApplyForm((c) => ({ ...c, [key]: value })); }
 
   async function handleSave() {
     const validationError = validateProfileForm(form);
@@ -934,7 +952,32 @@ export function ProfileScreen() {
     }
   }
 
+  async function handleApplySubmit() {
+    if (!applyForm.businessName.trim()) { setApplyError('Укажите название организации'); return; }
+    if (!applyForm.address.trim()) { setApplyError('Укажите адрес'); return; }
+    setApplyError('');
+    setApplySubmitting(true);
+    try {
+      const result = await submitProviderApplication(mode, {
+        businessName: applyForm.businessName.trim(),
+        address: applyForm.address.trim(),
+        phone: applyForm.phone.trim() || undefined,
+        description: applyForm.description.trim() || undefined,
+      });
+      setApplication(result);
+      setShowApplyForm(false);
+      setApplySuccess(true);
+      hapticSuccess();
+    } catch (err) {
+      setApplyError(err.message || 'Не удалось отправить заявку.');
+      hapticError();
+    } finally {
+      setApplySubmitting(false);
+    }
+  }
+
   const label = `${form.firstName || user?.firstName || ''} ${form.lastName || user?.lastName || ''}`.trim() || 'MyPet owner';
+  const isRegularUser = user?.role === 'USER';
 
   return (
     <Screen>
@@ -956,6 +999,92 @@ export function ProfileScreen() {
         <PrimaryButton label={t('profile_save')} icon="content-save-outline" onPress={handleSave} />
         <SecondaryButton label={t('profile_sign_out')} icon="logout" onPress={logout} />
       </GlassCard>
+
+      {/* Become a Provider section */}
+      {isRegularUser && mode === 'live' ? (
+        <GlassCard style={styles.formPanel}>
+          <SectionTitle title="Стать партнёром" subtitle="Зарегистрируйте свою организацию" />
+
+          {applySuccess && !application ? (
+            <Notice tone="success" icon="check-circle-outline" body="Заявка отправлена! Ожидайте проверки администратором." />
+          ) : null}
+
+          {application === undefined ? (
+            <Notice tone="neutral" icon="timer-sand" body="Загрузка…" />
+          ) : application?.status === 'PENDING' ? (
+            <View style={styles.appStatusBlock}>
+              <View style={[styles.appStatusDot, { backgroundColor: '#F2A93B' }]} />
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.appStatusTitle, { color: p.ink }]}>Заявка на рассмотрении</Text>
+                <Text style={[styles.appStatusSub, { color: p.inkSoft }]}>{application.businessName} · {application.address}</Text>
+              </View>
+            </View>
+          ) : application?.status === 'REJECTED' ? (
+            <>
+              <View style={styles.appStatusBlock}>
+                <View style={[styles.appStatusDot, { backgroundColor: palette.danger }]} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.appStatusTitle, { color: p.ink }]}>Заявка отклонена</Text>
+                  {application.adminNote ? (
+                    <Text style={[styles.appStatusSub, { color: p.inkSoft }]}>{application.adminNote}</Text>
+                  ) : null}
+                </View>
+              </View>
+              {!showApplyForm ? (
+                <SecondaryButton label="Подать заново" icon="refresh" onPress={() => {
+                  setApplyForm({ businessName: application.businessName || '', address: application.address || '', phone: application.phone || '', description: application.description || '' });
+                  setApplyError('');
+                  setShowApplyForm(true);
+                }} />
+              ) : null}
+            </>
+          ) : !application && !showApplyForm ? (
+            <SecondaryButton label="Подать заявку" icon="storefront-outline" onPress={() => { setShowApplyForm(true); setApplyError(''); }} />
+          ) : null}
+
+          {showApplyForm ? (
+            <View style={styles.applyForm}>
+              {applyError ? <Notice tone="danger" icon="alert-circle" body={applyError} /> : null}
+              <Field
+                label="Название организации *"
+                value={applyForm.businessName}
+                onChangeText={(v) => setApplyField('businessName', v)}
+                placeholder="ООО Veterinary House"
+              />
+              <Field
+                label="Адрес *"
+                value={applyForm.address}
+                onChangeText={(v) => setApplyField('address', v)}
+                placeholder="г. Астана, ул. Кенесары 40"
+              />
+              <Field
+                label="Телефон"
+                value={applyForm.phone}
+                onChangeText={(v) => setApplyField('phone', v)}
+                placeholder="+7 777 000 0000"
+                keyboardType="phone-pad"
+                autoCapitalize="none"
+              />
+              <Field
+                label="Описание (необязательно)"
+                value={applyForm.description}
+                onChangeText={(v) => setApplyField('description', v)}
+                placeholder="Кратко о вашей организации и услугах"
+                multiline
+              />
+              <View style={styles.applyActions}>
+                <PrimaryButton
+                  label={applySubmitting ? 'Отправка…' : 'Отправить заявку'}
+                  icon="send-outline"
+                  onPress={handleApplySubmit}
+                  disabled={applySubmitting}
+                />
+                <SecondaryButton label="Отмена" onPress={() => { setShowApplyForm(false); setApplyError(''); }} />
+              </View>
+            </View>
+          ) : null}
+        </GlassCard>
+      ) : null}
 
       <GlassCard style={styles.formPanel}>
         <SectionTitle title="Appearance" />
@@ -1369,5 +1498,33 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.92,
+  },
+  appStatusBlock: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  appStatusDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    flexShrink: 0,
+  },
+  appStatusTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    fontFamily: typography.display,
+  },
+  appStatusSub: {
+    fontSize: 12,
+    lineHeight: 17,
+    fontFamily: typography.body,
+  },
+  applyForm: {
+    gap: spacing.md,
+  },
+  applyActions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
   },
 });

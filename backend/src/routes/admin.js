@@ -33,6 +33,101 @@ router.get('/stats', async (req, res, next) => {
 
 /**
  * @openapi
+ * /admin/provider-applications:
+ *   get:
+ *     summary: List all provider applications
+ */
+router.get('/provider-applications', async (req, res, next) => {
+  try {
+    const apps = await prisma.providerApplication.findMany({
+      include: { user: { select: { id: true, email: true, firstName: true, lastName: true, phone: true } } },
+      orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
+    });
+    res.json(apps);
+  } catch (e) {
+    next(e);
+  }
+});
+
+/**
+ * @openapi
+ * /admin/provider-applications/:id:
+ *   patch:
+ *     summary: Approve or reject a provider application
+ */
+router.patch('/provider-applications/:id', async (req, res, next) => {
+  try {
+    const { status, adminNote } = req.body || {};
+    if (!['APPROVED', 'REJECTED'].includes(status)) {
+      return res.status(400).json({ error: 'Status must be APPROVED or REJECTED' });
+    }
+
+    const application = await prisma.providerApplication.findUnique({
+      where: { id: req.params.id },
+      include: { user: true },
+    });
+    if (!application) return res.status(404).json({ error: 'Application not found' });
+    if (application.status !== 'PENDING') {
+      return res.status(400).json({ error: `Application is already ${application.status.toLowerCase()}` });
+    }
+
+    if (status === 'APPROVED') {
+      await prisma.$transaction(async (tx) => {
+        await tx.user.update({ where: { id: application.userId }, data: { role: 'PROVIDER' } });
+        await tx.provider.upsert({
+          where: { userId: application.userId },
+          create: {
+            userId: application.userId,
+            businessName: application.businessName,
+            address: application.address,
+            verified: true,
+            verifiedAt: new Date(),
+          },
+          update: {
+            businessName: application.businessName,
+            address: application.address,
+            verified: true,
+            verifiedAt: new Date(),
+          },
+        });
+        await tx.providerApplication.update({
+          where: { id: req.params.id },
+          data: { status: 'APPROVED', adminNote: adminNote || null },
+        });
+        await tx.notification.create({
+          data: {
+            userId: application.userId,
+            title: 'Заявка одобрена! 🎉',
+            body: 'Ваша заявка на регистрацию провайдера одобрена. Выйдите и войдите снова, чтобы перейти в режим провайдера.',
+          },
+        });
+      });
+    } else {
+      await prisma.providerApplication.update({
+        where: { id: req.params.id },
+        data: { status: 'REJECTED', adminNote: adminNote || null },
+      });
+      await prisma.notification.create({
+        data: {
+          userId: application.userId,
+          title: 'Заявка отклонена',
+          body: adminNote || 'Ваша заявка была отклонена. Вы можете подать её повторно.',
+        },
+      });
+    }
+
+    const updated = await prisma.providerApplication.findUnique({
+      where: { id: req.params.id },
+      include: { user: { select: { id: true, email: true, firstName: true, lastName: true } } },
+    });
+    res.json(updated);
+  } catch (e) {
+    next(e);
+  }
+});
+
+/**
+ * @openapi
  * /admin/providers/pending:
  *   get:
  *     summary: List unverified providers

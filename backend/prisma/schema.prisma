@@ -22,6 +22,12 @@ enum BookingStatus {
   CANCELLED
 }
 
+enum ApplicationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 enum ProviderCategory {
   VETERINARY
   GROOMING
@@ -62,6 +68,7 @@ model User {
   notifications Notification[]
   pets          Pet[]
   favoriteProviders FavoriteProvider[]
+  providerApplication ProviderApplication?
 
   @@map("users")
 }
@@ -108,6 +115,7 @@ model Provider {
   bookings Booking[]
   reviews  Review[]
   favoritedBy FavoriteProvider[]
+  staff    Staff[]
 
   @@map("providers")
 }
@@ -136,6 +144,7 @@ model Booking {
   providerId  String        @map("provider_id")
   serviceId   String        @map("service_id")
   petId       String?       @map("pet_id")
+  staffId     String?       @map("staff_id")
   status      BookingStatus @default(PENDING)
   scheduledAt DateTime     @map("scheduled_at")
   acceptedAt  DateTime?    @map("accepted_at")
@@ -146,10 +155,11 @@ model Booking {
   createdAt   DateTime    @default(now()) @map("created_at")
   updatedAt   DateTime    @updatedAt @map("updated_at")
 
-  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
   service  Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
   pet      Pet?    @relation(fields: [petId], references: [id], onDelete: SetNull)
+  staff    Staff?  @relation(fields: [staffId], references: [id], onDelete: SetNull)
   review   Review?
 
   @@map("bookings")
@@ -214,4 +224,36 @@ model FavoriteProvider {
 
   @@unique([userId, providerId])
   @@map("favorite_providers")
+}
+
+model ProviderApplication {
+  id           String            @id @default(cuid())
+  userId       String            @unique @map("user_id")
+  businessName String            @map("business_name")
+  address      String
+  phone        String?
+  description  String?           @db.Text
+  status       ApplicationStatus @default(PENDING)
+  adminNote    String?           @map("admin_note") @db.Text
+  createdAt    DateTime          @default(now()) @map("created_at")
+  updatedAt    DateTime          @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("provider_applications")
+}
+
+model Staff {
+  id         String   @id @default(cuid())
+  providerId String   @map("provider_id")
+  name       String
+  role       String?
+  avatarUrl  String?  @map("avatar_url")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  provider Provider  @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  bookings Booking[]
+
+  @@map("staff")
 }

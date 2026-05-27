@@ -1,12 +1,15 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
-import { Linking, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { Linking, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useT } from '../context/LocaleContext';
 import {
+  createStaff,
+  deleteStaff,
   getProviderStats,
+  listMyStaff,
   listProviderBookings,
   listProviderServices,
   updateProfile,
@@ -245,6 +248,14 @@ export function ProviderServicesScreen() {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
 
+  // Staff state
+  const [staffList, setStaffList] = useState([]);
+  const [staffLoading, setStaffLoading] = useState(true);
+  const [addingStaff, setAddingStaff] = useState(false);
+  const [newStaffName, setNewStaffName] = useState('');
+  const [newStaffRole, setNewStaffRole] = useState('');
+  const [staffError, setStaffError] = useState('');
+
   useEffect(() => {
     async function load() {
       setLoading(true);
@@ -252,14 +263,11 @@ export function ProviderServicesScreen() {
       try {
         const result = await listProviderServices(mode);
         if (result !== null) {
-          console.log('[ProviderServices] Loaded', result.length, 'services from DB:', result.map(s => s.title).join(', '));
           setServices(result);
         } else {
-          console.log('[ProviderServices] Demo mode — showing preview services');
           setServices(DEMO_SERVICES_FALLBACK);
         }
       } catch (err) {
-        console.error('[ProviderServices] Error:', err.message);
         setError(err.message || 'Unable to load services.');
         setServices(DEMO_SERVICES_FALLBACK);
       } finally {
@@ -267,6 +275,21 @@ export function ProviderServicesScreen() {
       }
     }
     load();
+  }, [mode]);
+
+  useEffect(() => {
+    async function loadStaff() {
+      setStaffLoading(true);
+      try {
+        const result = await listMyStaff(mode);
+        setStaffList(result || []);
+      } catch {
+        setStaffList([]);
+      } finally {
+        setStaffLoading(false);
+      }
+    }
+    loadStaff();
   }, [mode]);
 
   function startEdit(svc) {
@@ -298,8 +321,31 @@ export function ProviderServicesScreen() {
       setEditingId('');
       setSaved(true);
     } catch (err) {
-      console.error('[ProviderServices] Save error:', err.message);
       setError(err.message || 'Unable to save service.');
+    }
+  }
+
+  async function handleAddStaff() {
+    if (!newStaffName.trim()) { setStaffError('Enter a name'); return; }
+    setStaffError('');
+    try {
+      const member = await createStaff(mode, { name: newStaffName.trim(), role: newStaffRole.trim() || undefined });
+      if (member) setStaffList(cur => [...cur, member]);
+      setNewStaffName('');
+      setNewStaffRole('');
+      setAddingStaff(false);
+    } catch (err) {
+      setStaffError(err.message || 'Unable to add staff.');
+    }
+  }
+
+  async function handleDeleteStaff(staffId) {
+    setStaffError('');
+    try {
+      await deleteStaff(mode, staffId);
+      setStaffList(cur => cur.filter(s => s.id !== staffId));
+    } catch (err) {
+      setStaffError(err.message || 'Unable to remove staff.');
     }
   }
 
@@ -363,6 +409,64 @@ export function ProviderServicesScreen() {
           )}
         </GlassCard>
       ))}
+
+      {/* ── Staff Management ── */}
+      <SectionTitle
+        title="Мастера"
+        subtitle={staffLoading ? 'Загрузка…' : `${staffList.length} сотрудник${staffList.length === 1 ? '' : staffList.length < 5 ? 'а' : 'ов'}`}
+      />
+
+      {staffError ? <Notice tone="danger" icon="alert-circle" body={staffError} /> : null}
+
+      {staffList.map((member) => (
+        <GlassCard key={member.id} style={styles.staffCard}>
+          <View style={styles.staffRow}>
+            <View style={[styles.staffAvatar, { backgroundColor: palette.surfaceMuted }]}>
+              <MaterialCommunityIcons name="account-outline" size={20} color={palette.inkSoft} />
+            </View>
+            <View style={styles.staffCopy}>
+              <Text style={styles.staffName}>{member.name}</Text>
+              {member.role ? <Text style={styles.staffRole}>{member.role}</Text> : null}
+            </View>
+            <Pressable
+              onPress={() => handleDeleteStaff(member.id)}
+              style={({ pressed }) => [styles.staffDeleteBtn, pressed && { opacity: 0.6 }]}
+            >
+              <MaterialCommunityIcons name="trash-can-outline" size={18} color={palette.danger || '#EF4444'} />
+            </Pressable>
+          </View>
+        </GlassCard>
+      ))}
+
+      {!staffLoading && staffList.length === 0 && !addingStaff ? (
+        <Notice tone="neutral" icon="account-group-outline" body="Нет мастеров. Добавьте сотрудников — клиенты смогут выбрать мастера при бронировании." />
+      ) : null}
+
+      {addingStaff ? (
+        <GlassCard style={styles.addStaffCard}>
+          <Text style={styles.addStaffTitle}>Новый сотрудник</Text>
+          <TextInput
+            style={styles.staffInput}
+            placeholder="Имя мастера"
+            placeholderTextColor={palette.inkSoft}
+            value={newStaffName}
+            onChangeText={setNewStaffName}
+          />
+          <TextInput
+            style={styles.staffInput}
+            placeholder="Должность (необязательно)"
+            placeholderTextColor={palette.inkSoft}
+            value={newStaffRole}
+            onChangeText={setNewStaffRole}
+          />
+          <View style={styles.editActions}>
+            <PrimaryButton label="Добавить" icon="account-plus-outline" onPress={handleAddStaff} compact />
+            <SecondaryButton label="Отмена" onPress={() => { setAddingStaff(false); setNewStaffName(''); setNewStaffRole(''); setStaffError(''); }} style={styles.editCancel} />
+          </View>
+        </GlassCard>
+      ) : (
+        <SecondaryButton label="Добавить мастера" icon="account-plus-outline" onPress={() => setAddingStaff(true)} />
+      )}
     </Screen>
   );
 }
@@ -460,6 +564,7 @@ function InboxCard({ booking, onAction, compact }) {
         <View style={styles.inboxCopy}>
           <Text style={styles.inboxCustomer}>{customerName || 'Customer'}</Text>
           {petLabel ? <Text style={styles.inboxPet}>{petLabel}</Text> : null}
+          {booking.staff ? <Text style={styles.inboxMaster}>👤 {booking.staff.name}{booking.staff.role ? ` · ${booking.staff.role}` : ''}</Text> : null}
           <Text style={styles.inboxService}>{booking.service?.title}</Text>
           <Text style={styles.inboxTime}>{formatDateTime(booking.scheduledAt)}</Text>
           {booking.notes ? <Text style={styles.inboxNotes}>{booking.notes}</Text> : null}
@@ -632,6 +737,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontFamily: typography.body,
   },
+  inboxMaster: {
+    color: palette.inkSoft,
+    fontSize: 12,
+    fontFamily: typography.body,
+  },
   inboxService: {
     color: palette.ink,
     fontSize: 13,
@@ -756,6 +866,61 @@ const styles = StyleSheet.create({
     color: palette.inkSoft,
     fontSize: 12,
     fontFamily: typography.body,
+  },
+  staffCard: {
+    paddingVertical: spacing.sm,
+  },
+  staffRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  staffAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  staffCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  staffName: {
+    color: palette.ink,
+    fontSize: 15,
+    fontWeight: '700',
+    fontFamily: typography.body,
+  },
+  staffRole: {
+    color: palette.inkSoft,
+    fontSize: 12,
+    fontFamily: typography.body,
+  },
+  staffDeleteBtn: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addStaffCard: {
+    gap: spacing.sm,
+  },
+  addStaffTitle: {
+    color: palette.ink,
+    fontSize: 14,
+    fontWeight: '700',
+    fontFamily: typography.body,
+  },
+  staffInput: {
+    borderWidth: 1,
+    borderColor: palette.line,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    fontSize: 14,
+    fontFamily: typography.body,
+    color: palette.ink,
   },
   formPanel: {
     gap: spacing.md,
