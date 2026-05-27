@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useEffect, useRef, useState } from 'react';
 import { Animated, FlatList, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
@@ -907,6 +908,13 @@ export function ProfileScreen() {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
 
+  // Saved location state
+  const [savedLocation, setSavedLocation] = useState(null); // { label, coords }
+  const [showLocationInput, setShowLocationInput] = useState(false);
+  const [locationInput, setLocationInput] = useState('');
+  const [locationGeocoding, setLocationGeocoding] = useState(false);
+  const [locationError, setLocationError] = useState('');
+
   // Provider application state
   const [application, setApplication] = useState(undefined); // undefined = loading
   const [showApplyForm, setShowApplyForm] = useState(false);
@@ -927,6 +935,12 @@ export function ProfileScreen() {
   }, [mode]);
 
   useEffect(() => {
+    AsyncStorage.getItem('@mypet_location')
+      .then((raw) => { if (raw) setSavedLocation(JSON.parse(raw)); })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
     if (user?.role !== 'USER') { setApplication(null); return; }
     let active = true;
     getMyProviderApplication(mode)
@@ -937,6 +951,35 @@ export function ProfileScreen() {
 
   function setField(key, value) { setForm((c) => ({ ...c, [key]: value })); }
   function setApplyField(key, value) { setApplyForm((c) => ({ ...c, [key]: value })); }
+
+  async function handleSaveLocation() {
+    if (!locationInput.trim()) return;
+    setLocationGeocoding(true);
+    setLocationError('');
+    try {
+      const q = encodeURIComponent(locationInput.trim() + ', Астана, Казахстан');
+      const url = `https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1&countrycodes=kz`;
+      const resp = await fetch(url, { headers: { 'Accept-Language': 'ru', 'User-Agent': 'MyPetApp/1.0' } });
+      const data = await resp.json();
+      if (!data.length) { setLocationError('Адрес не найден. Уточните запрос.'); return; }
+      const coords = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+      const saved = { coords, label: locationInput.trim(), source: 'manual' };
+      await AsyncStorage.setItem('@mypet_location', JSON.stringify(saved));
+      setSavedLocation(saved);
+      setShowLocationInput(false);
+      setLocationInput('');
+      hapticSuccess();
+    } catch {
+      setLocationError('Ошибка при поиске адреса.');
+    } finally {
+      setLocationGeocoding(false);
+    }
+  }
+
+  async function handleClearLocation() {
+    await AsyncStorage.removeItem('@mypet_location');
+    setSavedLocation(null);
+  }
 
   async function handleSave() {
     const validationError = validateProfileForm(form);
@@ -1081,6 +1124,48 @@ export function ProfileScreen() {
           ) : null}
         </GlassCard>
       ) : null}
+
+      <GlassCard style={styles.formPanel}>
+        <SectionTitle title="Мой адрес" subtitle="Используется для поиска ближайших клиник" />
+        {savedLocation?.label && savedLocation.source === 'manual' ? (
+          <View style={styles.appStatusBlock}>
+            <MaterialCommunityIcons name="map-marker-check-outline" size={18} color={p.brand} />
+            <Text style={[styles.appStatusSub, { color: p.ink, flex: 1 }]} numberOfLines={2}>{savedLocation.label}</Text>
+            <Pressable onPress={handleClearLocation} style={{ padding: 4 }}>
+              <MaterialCommunityIcons name="close-circle-outline" size={18} color={p.inkSoft} />
+            </Pressable>
+          </View>
+        ) : (
+          <Notice tone="neutral" icon="map-marker-outline" body="Адрес не задан. Для точного поиска поблизости укажите ваш адрес." />
+        )}
+
+        {!showLocationInput ? (
+          <SecondaryButton
+            label={savedLocation?.label ? 'Изменить адрес' : 'Указать адрес'}
+            icon="map-marker-plus-outline"
+            onPress={() => { setShowLocationInput(true); setLocationInput(savedLocation?.label || ''); setLocationError(''); }}
+          />
+        ) : (
+          <View style={styles.applyForm}>
+            {locationError ? <Notice tone="danger" icon="alert-circle" body={locationError} /> : null}
+            <Field
+              label="Ваш адрес"
+              value={locationInput}
+              onChangeText={setLocationInput}
+              placeholder="ул. Достык, 12 или район Есиль"
+            />
+            <View style={styles.applyActions}>
+              <PrimaryButton
+                label={locationGeocoding ? 'Поиск…' : 'Сохранить'}
+                icon="content-save-outline"
+                onPress={handleSaveLocation}
+                disabled={locationGeocoding || !locationInput.trim()}
+              />
+              <SecondaryButton label="Отмена" onPress={() => { setShowLocationInput(false); setLocationError(''); }} />
+            </View>
+          </View>
+        )}
+      </GlassCard>
 
       <GlassCard style={styles.formPanel}>
         <SectionTitle title="Appearance" />

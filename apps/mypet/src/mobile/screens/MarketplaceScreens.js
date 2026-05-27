@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { useEffect, useRef, useState } from 'react';
@@ -194,13 +195,28 @@ const CATEGORY_COLORS = {
   SHELTER: '#dc2626',
 };
 
+const LOCATION_KEY = '@mypet_location';
+
 async function geocodeAddress(address) {
   const q = encodeURIComponent(address + ', Астана, Казахстан');
   const url = `https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1&countrycodes=kz`;
   const resp = await fetch(url, { headers: { 'Accept-Language': 'ru', 'User-Agent': 'MyPetApp/1.0' } });
   const data = await resp.json();
   if (!data.length) return null;
-  return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon), display: data[0].display_name };
+  return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+}
+
+async function saveLocation(coords, label, source) {
+  await AsyncStorage.setItem(LOCATION_KEY, JSON.stringify({ coords, label, source }));
+}
+
+async function loadSavedLocation() {
+  try {
+    const raw = await AsyncStorage.getItem(LOCATION_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
 }
 
 export function NearbyServicesScreen({ navigate }) {
@@ -213,57 +229,65 @@ export function NearbyServicesScreen({ navigate }) {
   const [topRated, setTopRated] = useState(false);
   const [viewMode, setViewMode] = useState('list');
   const [userCoords, setUserCoords] = useState(ASTANA);
-  const [locationStatus, setLocationStatus] = useState('loading'); // 'loading' | 'gps' | 'manual' | 'fallback' | 'denied'
+  const [locationStatus, setLocationStatus] = useState('loading');
+  const [locationLabel, setLocationLabel] = useState('');
   const [showAddressInput, setShowAddressInput] = useState(false);
   const [addressInput, setAddressInput] = useState('');
   const [geocoding, setGeocoding] = useState(false);
   const [geocodeError, setGeocodeError] = useState('');
-  const [manualLabel, setManualLabel] = useState('');
-  const searchCoordsRef = useRef({ lat: ASTANA.latitude, lng: ASTANA.longitude });
+  const searchCoordsRef = useRef(null); // null means not yet resolved
 
+  // Effect 1: resolve location once on mount
   useEffect(() => {
     let active = true;
+    async function resolveLocation() {
+      // Try saved location first
+      const saved = await loadSavedLocation();
+      if (saved?.coords && saved.source === 'manual') {
+        if (!active) return;
+        searchCoordsRef.current = saved.coords;
+        setUserCoords({ latitude: saved.coords.lat, longitude: saved.coords.lng });
+        setLocationLabel(saved.label || '');
+        setLocationStatus('manual');
+        return;
+      }
 
-    async function loadNearby() {
-      setLoading(true);
-      let coords = { lat: null, lng: null };
-
+      // Try GPS
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== 'granted') {
-          if (active) setLocationStatus('denied');
-        } else {
-          const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Highest });
-          coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-          if (active) {
-            setUserCoords({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
-            searchCoordsRef.current = coords;
-            setLocationStatus('gps');
-          }
+          if (!active) return;
+          searchCoordsRef.current = { lat: ASTANA.latitude, lng: ASTANA.longitude };
+          setLocationStatus('denied');
+          return;
         }
-      } catch {
-        if (active) setLocationStatus('fallback');
-      }
-
-      if (!coords.lat) {
-        coords = { lat: ASTANA.latitude, lng: ASTANA.longitude };
+        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Highest });
+        if (!active) return;
+        const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         searchCoordsRef.current = coords;
+        setUserCoords({ latitude: coords.lat, longitude: coords.lng });
+        setLocationStatus('gps');
+        saveLocation(coords, '', 'gps');
+      } catch {
+        if (!active) return;
+        searchCoordsRef.current = { lat: ASTANA.latitude, lng: ASTANA.longitude };
+        setLocationStatus('fallback');
       }
-
-      const items = await listNearbyProviders({ ...coords, radius: radiusKm, category, topRated });
-      if (!active) return;
-      setProviders(items);
-      setLoading(false);
     }
-
-    loadNearby().catch(() => {
-      if (!active) return;
-      setProviders([]);
-      setLoading(false);
-    });
-
+    resolveLocation();
     return () => { active = false; };
-  }, [category, radiusKm, topRated]);
+  }, []);
+
+  // Effect 2: search whenever coords resolved or filters change
+  useEffect(() => {
+    if (!searchCoordsRef.current) return; // wait for location
+    let active = true;
+    setLoading(true);
+    listNearbyProviders({ ...searchCoordsRef.current, radius: radiusKm, category, topRated })
+      .then((items) => { if (active) { setProviders(items); setLoading(false); } })
+      .catch(() => { if (active) { setProviders([]); setLoading(false); } });
+    return () => { active = false; };
+  }, [locationStatus, category, radiusKm, topRated]);
 
   async function handleGeocode() {
     if (!addressInput.trim()) return;
@@ -271,21 +295,15 @@ export function NearbyServicesScreen({ navigate }) {
     setGeocodeError('');
     try {
       const result = await geocodeAddress(addressInput.trim());
-      if (!result) {
-        setGeocodeError('Адрес не найден. Уточните запрос.');
-        return;
-      }
+      if (!result) { setGeocodeError('Адрес не найден. Уточните запрос.'); return; }
       const coords = { lat: result.lat, lng: result.lng };
       searchCoordsRef.current = coords;
-      setUserCoords({ latitude: result.lat, longitude: result.lng });
-      setManualLabel(addressInput.trim());
+      setUserCoords({ latitude: coords.lat, longitude: coords.lng });
+      setLocationLabel(addressInput.trim());
       setLocationStatus('manual');
+      saveLocation(coords, addressInput.trim(), 'manual');
       setShowAddressInput(false);
       setAddressInput('');
-      setLoading(true);
-      const items = await listNearbyProviders({ ...coords, radius: radiusKm, category, topRated });
-      setProviders(items);
-      setLoading(false);
     } catch {
       setGeocodeError('Ошибка при поиске адреса. Проверьте соединение.');
     } finally {
@@ -307,7 +325,7 @@ export function NearbyServicesScreen({ navigate }) {
           style={[styles.locationBar, { backgroundColor: p.surfaceMuted, borderColor: p.line }]}
         >
           <MaterialCommunityIcons name="map-marker-check-outline" size={16} color={p.brand} />
-          <Text style={[styles.locationBarText, { color: p.ink }]} numberOfLines={1}>{manualLabel}</Text>
+          <Text style={[styles.locationBarText, { color: p.ink }]} numberOfLines={1}>{locationLabel}</Text>
           <Text style={[styles.locationBarAction, { color: p.brand }]}>Изменить</Text>
         </Pressable>
       ) : locationStatus === 'gps' ? (
