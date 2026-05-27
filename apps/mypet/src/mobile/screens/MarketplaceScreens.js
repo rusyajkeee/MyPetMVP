@@ -194,6 +194,15 @@ const CATEGORY_COLORS = {
   SHELTER: '#dc2626',
 };
 
+async function geocodeAddress(address) {
+  const q = encodeURIComponent(address + ', Астана, Казахстан');
+  const url = `https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1&countrycodes=kz`;
+  const resp = await fetch(url, { headers: { 'Accept-Language': 'ru', 'User-Agent': 'MyPetApp/1.0' } });
+  const data = await resp.json();
+  if (!data.length) return null;
+  return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon), display: data[0].display_name };
+}
+
 export function NearbyServicesScreen({ navigate }) {
   const { palette: p, dark } = useTheme();
   const t = useT();
@@ -204,7 +213,13 @@ export function NearbyServicesScreen({ navigate }) {
   const [topRated, setTopRated] = useState(false);
   const [viewMode, setViewMode] = useState('list');
   const [userCoords, setUserCoords] = useState(ASTANA);
-  const [locationStatus, setLocationStatus] = useState('loading'); // 'loading' | 'gps' | 'fallback' | 'denied'
+  const [locationStatus, setLocationStatus] = useState('loading'); // 'loading' | 'gps' | 'manual' | 'fallback' | 'denied'
+  const [showAddressInput, setShowAddressInput] = useState(false);
+  const [addressInput, setAddressInput] = useState('');
+  const [geocoding, setGeocoding] = useState(false);
+  const [geocodeError, setGeocodeError] = useState('');
+  const [manualLabel, setManualLabel] = useState('');
+  const searchCoordsRef = useRef({ lat: ASTANA.latitude, lng: ASTANA.longitude });
 
   useEffect(() => {
     let active = true;
@@ -218,12 +233,11 @@ export function NearbyServicesScreen({ navigate }) {
         if (status !== 'granted') {
           if (active) setLocationStatus('denied');
         } else {
-          const pos = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.Highest,
-          });
+          const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Highest });
           coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
           if (active) {
             setUserCoords({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
+            searchCoordsRef.current = coords;
             setLocationStatus('gps');
           }
         }
@@ -233,7 +247,7 @@ export function NearbyServicesScreen({ navigate }) {
 
       if (!coords.lat) {
         coords = { lat: ASTANA.latitude, lng: ASTANA.longitude };
-        if (active && locationStatus !== 'denied') setLocationStatus('fallback');
+        searchCoordsRef.current = coords;
       }
 
       const items = await listNearbyProviders({ ...coords, radius: radiusKm, category, topRated });
@@ -251,6 +265,34 @@ export function NearbyServicesScreen({ navigate }) {
     return () => { active = false; };
   }, [category, radiusKm, topRated]);
 
+  async function handleGeocode() {
+    if (!addressInput.trim()) return;
+    setGeocoding(true);
+    setGeocodeError('');
+    try {
+      const result = await geocodeAddress(addressInput.trim());
+      if (!result) {
+        setGeocodeError('Адрес не найден. Уточните запрос.');
+        return;
+      }
+      const coords = { lat: result.lat, lng: result.lng };
+      searchCoordsRef.current = coords;
+      setUserCoords({ latitude: result.lat, longitude: result.lng });
+      setManualLabel(addressInput.trim());
+      setLocationStatus('manual');
+      setShowAddressInput(false);
+      setAddressInput('');
+      setLoading(true);
+      const items = await listNearbyProviders({ ...coords, radius: radiusKm, category, topRated });
+      setProviders(items);
+      setLoading(false);
+    } catch {
+      setGeocodeError('Ошибка при поиске адреса. Проверьте соединение.');
+    } finally {
+      setGeocoding(false);
+    }
+  }
+
   const catColor = CATEGORY_COLORS[category] || '#16a34a';
   const activeToggleBg = dark ? '#E6EDF3' : '#111318';
   const activeToggleText = dark ? '#111318' : '#fff';
@@ -259,10 +301,64 @@ export function NearbyServicesScreen({ navigate }) {
     <Screen scrollable={viewMode === 'list'}>
       <HeroTitle eyebrow={t('nearby_eyebrow')} title={t('nearby_title')} subtitle={t('nearby_subtitle')} />
 
-      {locationStatus === 'fallback' ? (
-        <Notice tone="warning" icon="map-marker-alert-outline" body="Не удалось определить ваше местоположение. Расстояния считаются от центра Астаны." />
-      ) : locationStatus === 'denied' ? (
-        <Notice tone="warning" icon="map-marker-off-outline" body="Доступ к геолокации запрещён. Расстояния считаются от центра Астаны." />
+      {locationStatus === 'manual' ? (
+        <Pressable
+          onPress={() => setShowAddressInput(true)}
+          style={[styles.locationBar, { backgroundColor: p.surfaceMuted, borderColor: p.line }]}
+        >
+          <MaterialCommunityIcons name="map-marker-check-outline" size={16} color={p.brand} />
+          <Text style={[styles.locationBarText, { color: p.ink }]} numberOfLines={1}>{manualLabel}</Text>
+          <Text style={[styles.locationBarAction, { color: p.brand }]}>Изменить</Text>
+        </Pressable>
+      ) : locationStatus === 'gps' ? (
+        <Pressable
+          onPress={() => setShowAddressInput(true)}
+          style={[styles.locationBar, { backgroundColor: p.surfaceMuted, borderColor: p.line }]}
+        >
+          <MaterialCommunityIcons name="crosshairs-gps" size={16} color="#22C55E" />
+          <Text style={[styles.locationBarText, { color: p.ink }]}>GPS определён</Text>
+          <Text style={[styles.locationBarAction, { color: p.brand }]}>Уточнить адрес</Text>
+        </Pressable>
+      ) : locationStatus === 'fallback' || locationStatus === 'denied' ? (
+        <Pressable
+          onPress={() => setShowAddressInput(true)}
+          style={[styles.locationBar, { backgroundColor: '#FEF3CD', borderColor: '#F2A93B' }]}
+        >
+          <MaterialCommunityIcons name="map-marker-alert-outline" size={16} color="#B45309" />
+          <Text style={[styles.locationBarText, { color: '#92400E' }]} numberOfLines={1}>
+            {locationStatus === 'denied' ? 'Геолокация запрещена' : 'Местоположение неточное'}
+          </Text>
+          <Text style={[styles.locationBarAction, { color: '#B45309' }]}>Ввести адрес</Text>
+        </Pressable>
+      ) : null}
+
+      {showAddressInput ? (
+        <View style={[styles.addressPanel, { backgroundColor: p.surface, borderColor: p.line }]}>
+          <Text style={[styles.addressPanelTitle, { color: p.ink }]}>Ваш адрес</Text>
+          <View style={styles.addressRow}>
+            <TextInput
+              style={[styles.addressInput, { borderColor: p.line, color: p.ink, backgroundColor: p.surfaceMuted }]}
+              placeholder="ул. Достык, 12 или район Есиль"
+              placeholderTextColor={p.inkSoft}
+              value={addressInput}
+              onChangeText={setAddressInput}
+              autoFocus
+              returnKeyType="search"
+              onSubmitEditing={handleGeocode}
+            />
+            <Pressable
+              onPress={handleGeocode}
+              disabled={geocoding || !addressInput.trim()}
+              style={[styles.addressBtn, { backgroundColor: p.brand, opacity: (!addressInput.trim() || geocoding) ? 0.5 : 1 }]}
+            >
+              <MaterialCommunityIcons name={geocoding ? 'timer-sand' : 'magnify'} size={20} color="#fff" />
+            </Pressable>
+          </View>
+          {geocodeError ? <Text style={[styles.geocodeError, { color: '#DC2626' }]}>{geocodeError}</Text> : null}
+          <Pressable onPress={() => { setShowAddressInput(false); setGeocodeError(''); }}>
+            <Text style={[styles.addressCancel, { color: p.inkSoft }]}>Отмена</Text>
+          </Pressable>
+        </View>
       ) : null}
 
       <View style={[styles.viewToggle, { backgroundColor: p.surfaceMuted }]}>
@@ -1119,6 +1215,68 @@ const styles = StyleSheet.create({
   serviceCardMetaText: {
     fontSize: 12,
     fontFamily: typography.body,
+  },
+  locationBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 10,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    marginBottom: 2,
+  },
+  locationBarText: {
+    flex: 1,
+    fontSize: 13,
+    fontFamily: typography.body,
+  },
+  locationBarAction: {
+    fontSize: 12,
+    fontWeight: '700',
+    fontFamily: typography.body,
+  },
+  addressPanel: {
+    borderWidth: 1,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    gap: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  addressPanelTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    fontFamily: typography.body,
+  },
+  addressRow: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
+  addressInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 10,
+    fontSize: 14,
+    fontFamily: typography.body,
+  },
+  addressBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  geocodeError: {
+    fontSize: 12,
+    fontFamily: typography.body,
+  },
+  addressCancel: {
+    fontSize: 13,
+    fontFamily: typography.body,
+    textAlign: 'center',
+    paddingVertical: 4,
   },
   viewToggle: {
     flexDirection: 'row',
