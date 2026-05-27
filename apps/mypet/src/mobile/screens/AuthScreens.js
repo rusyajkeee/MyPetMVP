@@ -16,7 +16,7 @@ const palette = lightPalette;
 // ─── WelcomeScreen ─────────────────────────────────────────────────────────
 
 export function WelcomeScreen({ navigate }) {
-  const { apiConfigured, apiLabel, apiReachable, preview, previewProvider } = useAuth();
+  const { apiConfigured, apiReachable, preview, previewProvider } = useAuth();
   const { palette: p } = useTheme();
   const { locale, setLocale } = useLocale();
   const t = useT();
@@ -98,15 +98,9 @@ export function WelcomeScreen({ navigate }) {
       </Animated.View>
 
       <Animated.View style={fs(a3)}>
-        {!apiConfigured ? (
-          <Notice tone="warning" icon="wifi-alert" title="API not set" body="Preview mode is available." />
-        ) : apiReachable === false ? (
-          <Notice tone="warning" icon="wifi-alert" title="API configured" body={`Cannot reach ${apiLabel}. Check it from your phone browser.`} />
-        ) : apiReachable === null ? (
-          <Notice tone="warning" icon="timer-sand" title="Checking API" body={apiLabel} />
-        ) : (
-          <Notice tone="success" icon="check-circle-outline" title="API reachable" body={apiLabel} />
-        )}
+        {apiReachable === false ? (
+          <Notice tone="warning" icon="wifi-alert" body="Сервер недоступен. Проверьте подключение." />
+        ) : null}
       </Animated.View>
 
       <Animated.View style={[fs(a4), styles.actions]}>
