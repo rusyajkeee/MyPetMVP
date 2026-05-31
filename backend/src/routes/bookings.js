@@ -16,7 +16,7 @@ const allowedStatusTransitions = {
 const createBookingSchema = z.object({
   serviceId: z.string().min(1),
   petId: z.string().optional(),
-  scheduledAt: z.string().datetime(),
+  scheduledAt: z.string().datetime({ offset: true }),
   notes: z.string().optional(),
   staffId: z.string().optional(),
 });
