@@ -109,6 +109,10 @@ router.post('/', authMiddleware, attachUser, requireRole('USER', 'ADMIN'), async
       if (e.message === 'STAFF_NOT_FOUND') {
         return res.status(400).json({ error: 'Staff member not found.' });
       }
+      // PostgreSQL serialization failure (two concurrent bookings for same slot)
+      if (e.code === 'P2034' || e.code === '40001') {
+        return res.status(409).json({ error: 'This time slot is already booked. Please choose another time.' });
+      }
       throw e;
     }
     // Notify provider
