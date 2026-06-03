@@ -794,17 +794,26 @@ export function ProviderScreen({ navigate, route }) {
         />
       </View>
 
-      <SectionTitle title={t('provider_services_label')} />
+      <SectionTitle title={t('provider_services_label')} subtitle="Нажмите на услугу, чтобы записаться" />
       {provider.services?.map((service) => (
-        <GlassCard key={service.id} style={styles.serviceRow}>
-          <View style={styles.serviceCopy}>
-            <Text style={[styles.serviceTitle, { color: p.ink }]}>{svcTitle(service.title)}</Text>
-            <Text style={[styles.serviceMeta, { color: p.inkSoft }]}>
-              {service.durationMin ? formatDuration(service.durationMin) : t('provider_open')}
-            </Text>
-          </View>
-          <Text style={[styles.servicePrice, { color: p.ink }]}>{formatMoney(service.priceKzt)}</Text>
-        </GlassCard>
+        <Pressable
+          key={service.id}
+          onPress={() => { hapticLight(); navigate('booking', { providerId, serviceId: service.id }); }}
+          style={({ pressed }) => [pressed ? styles.pressed : null]}
+        >
+          <GlassCard style={styles.serviceRow}>
+            <View style={styles.serviceCopy}>
+              <Text style={[styles.serviceTitle, { color: p.ink }]}>{svcTitle(service.title)}</Text>
+              <Text style={[styles.serviceMeta, { color: p.inkSoft }]}>
+                {service.durationMin ? formatDuration(service.durationMin) : t('provider_open')}
+              </Text>
+            </View>
+            <View style={styles.serviceRight}>
+              <Text style={[styles.servicePrice, { color: p.ink }]}>{formatMoney(service.priceKzt)}</Text>
+              <MaterialCommunityIcons name="chevron-right" size={18} color={p.inkSoft} />
+            </View>
+          </GlassCard>
+        </Pressable>
       ))}
 
       {(provider.reviews || []).length > 0 ? (
@@ -839,12 +848,13 @@ export function BookingScreen({ navigate, route }) {
   const t = useT();
   const svcTitle = useServiceTitle();
   const providerId = route?.params?.providerId;
+  const preselectedServiceId = route?.params?.serviceId || '';
   const [provider, setProvider] = useState(null);
   const [pets, setPets] = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [step, setStep] = useState('form');
-  const [selectedServiceId, setSelectedServiceId] = useState('');
+  const [selectedServiceId, setSelectedServiceId] = useState(preselectedServiceId);
   const [selectedPetId, setSelectedPetId] = useState('');
   const [selectedDay, setSelectedDay] = useState(() => {
     const days = makeDayValues();
@@ -876,7 +886,9 @@ export function BookingScreen({ navigate, route }) {
         if (!active) return;
         setProvider(nextProvider);
         setPets(nextPets);
-        setSelectedServiceId(nextProvider.services?.[0]?.id || '');
+        if (!preselectedServiceId) {
+          setSelectedServiceId(nextProvider.services?.[0]?.id || '');
+        }
         setSelectedPetId(nextPets[0]?.id || '');
       })
       .catch((e) => { if (active) setError(e.message || 'Booking error'); });
@@ -925,8 +937,16 @@ export function BookingScreen({ navigate, route }) {
       });
       setStep('done');
     } catch (e) {
-      setError(e.message || 'Booking failed');
-      setStep('form');
+      const isSlotTaken =
+        e?.original?.response?.status === 409 ||
+        (e.message || '').toLowerCase().includes('already booked') ||
+        (e.message || '').toLowerCase().includes('slot');
+      if (isSlotTaken) {
+        setStep('slotTaken');
+      } else {
+        setError(e.message || 'Booking failed');
+        setStep('form');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -949,6 +969,29 @@ export function BookingScreen({ navigate, route }) {
   const selectedPet = pets.find((pet) => pet.id === selectedPetId);
   const dayLabel = days.find((d) => d.value === selectedDay)?.label || selectedDay;
   const selectedMaster = staffList.find(s => s.id === selectedStaffId);
+
+  if (step === 'slotTaken') {
+    return (
+      <Screen contentContainerStyle={styles.slotTakenWrap}>
+        <View style={styles.slotTakenBlock}>
+          <View style={[styles.slotTakenIcon, { backgroundColor: p.warning + '18' }]}>
+            <MaterialCommunityIcons name="calendar-remove-outline" size={52} color={p.warning} />
+          </View>
+          <Text style={[styles.slotTakenTitle, { color: p.ink }]}>
+            Unfortunately, but this slot is already taken
+          </Text>
+          <Text style={[styles.slotTakenSub, { color: p.inkSoft }]}>
+            Someone booked this time just before you. Please pick a different time or date.
+          </Text>
+        </View>
+        <PrimaryButton
+          label="Understood"
+          icon="arrow-left"
+          onPress={() => setStep('form')}
+        />
+      </Screen>
+    );
+  }
 
   if (step === 'done') {
     return (
@@ -1654,6 +1697,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontFamily: typography.display,
   },
+  serviceRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
   serviceRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1753,6 +1801,39 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     fontFamily: typography.body,
+  },
+  slotTakenWrap: {
+    flexGrow: 1,
+    justifyContent: 'space-between',
+    paddingVertical: spacing.xl,
+  },
+  slotTakenBlock: {
+    alignItems: 'center',
+    gap: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    flex: 1,
+    justifyContent: 'center',
+  },
+  slotTakenIcon: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.sm,
+  },
+  slotTakenTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    fontFamily: typography.display,
+    textAlign: 'center',
+    lineHeight: 30,
+  },
+  slotTakenSub: {
+    fontSize: 15,
+    fontFamily: typography.body,
+    textAlign: 'center',
+    lineHeight: 22,
   },
   doneBlock: {
     alignItems: 'center',
