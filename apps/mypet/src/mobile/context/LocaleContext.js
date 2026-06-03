@@ -157,6 +157,8 @@ const STRINGS = {
     provider_business_info: 'Business info',
     provider_business_name: 'Business name',
     provider_switch_customer: 'Switch to customer view',
+    provider_category: 'Category',
+    provider_vet_medical_card: 'Pet medical card',
 
     // Discover / Home
     discover_title: 'Find providers',
@@ -408,6 +410,8 @@ const STRINGS = {
     provider_business_info: 'Информация о бизнесе',
     provider_business_name: 'Название бизнеса',
     provider_switch_customer: 'Переключиться на клиента',
+    provider_category: 'Категория',
+    provider_vet_medical_card: 'Медкарта питомца',
 
     discover_title: 'Найти специалистов',
     discover_subtitle: 'Рядом с вами, прямо сейчас.',
@@ -657,6 +661,8 @@ const STRINGS = {
     provider_business_info: 'Бизнес туралы ақпарат',
     provider_business_name: 'Бизнес атауы',
     provider_switch_customer: 'Клиент режиміне өту',
+    provider_category: 'Санат',
+    provider_vet_medical_card: 'Жануар денсаулық картасы',
 
     discover_title: 'Мамандарды табу',
     discover_subtitle: 'Жаныңызда, дәл қазір.',
@@ -799,4 +805,47 @@ export function useLocale() {
 export function useT() {
   const { locale } = useLocale();
   return (key) => STRINGS[locale]?.[key] ?? STRINGS.en[key] ?? key;
+}
+
+// Known service title translations (DB titles → localized display)
+export const SERVICE_TITLE_MAP = {
+  // Veterinary — import templates (Russian)
+  'Первичный осмотр':            { en: 'Primary consultation',    ru: 'Первичный осмотр',               kz: 'Алғашқы тексеру' },
+  'Вакцинация':                  { en: 'Vaccination',             ru: 'Вакцинация',                     kz: 'Вакцинация' },
+  'УЗИ диагностика':             { en: 'Ultrasound diagnostics',  ru: 'УЗИ диагностика',                kz: 'УДЗ диагностика' },
+  'Хирургическое вмешательство': { en: 'Surgery',                 ru: 'Хирургическое вмешательство',    kz: 'Хирургиялық ота' },
+  // Veterinary — seed / demo (English)
+  'Veterinary Consultation':     { en: 'Veterinary Consultation', ru: 'Ветеринарная консультация',       kz: 'Ветеринарлық кеңес' },
+  'Wellness visit':              { en: 'Wellness visit',          ru: 'Плановый осмотр',                kz: 'Жоспарлы тексеру' },
+  'Vaccination package':         { en: 'Vaccination package',     ru: 'Пакет вакцинации',               kz: 'Егу пакеті' },
+  'Digestive consultation':      { en: 'Digestive consultation',  ru: 'Гастро-консультация',            kz: 'Асқазан кеңесі' },
+  // Grooming — import templates
+  'Полный груминг':              { en: 'Full grooming',           ru: 'Полный груминг',                 kz: 'Толық груминг' },
+  'Стрижка':                     { en: 'Haircut',                 ru: 'Стрижка',                        kz: 'Қию' },
+  'Купание и сушка':             { en: 'Bath & dry',              ru: 'Купание и сушка',                kz: 'Шомылдыру және кептіру' },
+  // Grooming — seed / demo
+  'Full Grooming':               { en: 'Full grooming',           ru: 'Полный груминг',                 kz: 'Толық груминг' },
+  'Full grooming ritual':        { en: 'Full grooming ritual',    ru: 'Полный груминг-ритуал',          kz: 'Толық груминг рәсімі' },
+  'Puppy tidy session':          { en: 'Puppy tidy session',      ru: 'Груминг для щенка',              kz: 'Күшіктер груминг' },
+  'De-shed treatment':           { en: 'De-shed treatment',       ru: 'Процедура от линьки',            kz: 'Түлеуден арылу' },
+  // Boarding — import templates
+  'Суточное содержание':         { en: 'Daily boarding',          ru: 'Суточное содержание',            kz: 'Тәуліктік ұстау' },
+  'Дневное содержание':          { en: 'Day care',                ru: 'Дневное содержание',             kz: 'Күндізгі ұстау' },
+  'Выгул питомца':               { en: 'Pet walking',             ru: 'Выгул питомца',                  kz: 'Жануарды серуендету' },
+  // Boarding — demo
+  'Overnight suite':             { en: 'Overnight suite',         ru: 'Ночной номер',                   kz: 'Түнгі нөмір' },
+  'Day stay with enrichment':    { en: 'Day stay with enrichment',ru: 'Дневное пребывание',             kz: 'Күндізгі болу' },
+  'Puppy social day':            { en: 'Puppy social day',        ru: 'Социализация щенка',             kz: 'Күшік әлеуметтік күні' },
+  // Training — import templates
+  'Индивидуальное занятие':      { en: 'Individual training',     ru: 'Индивидуальное занятие',         kz: 'Жеке сабақ' },
+  'Групповое занятие':           { en: 'Group training',          ru: 'Групповое занятие',              kz: 'Топтық сабақ' },
+  'Коррекция поведения':         { en: 'Behavior correction',     ru: 'Коррекция поведения',            kz: 'Мінез-құлық түзету' },
+};
+
+export function useServiceTitle() {
+  const { locale } = useLocale();
+  return (title) => {
+    if (!title) return title;
+    return SERVICE_TITLE_MAP[title]?.[locale] ?? title;
+  };
 }

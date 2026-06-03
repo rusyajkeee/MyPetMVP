@@ -233,6 +233,7 @@ model ProviderApplication {
   address      String
   phone        String?
   description  String?           @db.Text
+  category     ProviderCategory  @default(VETERINARY)
   status       ApplicationStatus @default(PENDING)
   adminNote    String?           @map("admin_note") @db.Text
   createdAt    DateTime          @default(now()) @map("created_at")

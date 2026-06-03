@@ -9,15 +9,20 @@ import {
   createStaff,
   deleteStaff,
   getProviderAnalytics,
+  getProviderProfile,
   getProviderStats,
+  getVetMedicalCard,
   listMyStaff,
   listProviderBookings,
   listProviderServices,
+  saveVetMedicalCard,
   updateProfile,
   updateProviderBookingStatus,
+  updateProviderProfile,
   updateProviderService,
 } from '../lib/api';
 import { formatDateTime, formatDuration, formatMoney, relativeLabel } from '../lib/format';
+import { useServiceTitle } from '../context/LocaleContext';
 import {
   AvatarBadge,
   EmptyState,
@@ -36,6 +41,13 @@ import {
 import { lightPalette, radius, spacing, typography } from '../theme';
 
 const palette = lightPalette;
+
+const PROVIDER_CATEGORIES = [
+  { value: 'VETERINARY', labelKey: 'cat_veterinary', icon: 'stethoscope' },
+  { value: 'GROOMING',   labelKey: 'cat_grooming',   icon: 'content-cut' },
+  { value: 'BOARDING',   labelKey: 'cat_boarding',   icon: 'home-heart' },
+  { value: 'TRAINING',   labelKey: 'cat_training',   icon: 'school-outline' },
+];
 
 const STATUS_TONE = {
   PENDING: 'warning',
@@ -65,17 +77,20 @@ export function ProviderDashboardScreen({ navigate }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [actionError, setActionError] = useState('');
+  const [isVet, setIsVet] = useState(false);
 
   async function load(isRefresh = false) {
     if (isRefresh) setRefreshing(true);
     else setLoading(true);
     try {
-      const [nextStats, nextBookings] = await Promise.all([
+      const [nextStats, nextBookings, profile] = await Promise.all([
         getProviderStats(mode),
         listProviderBookings(mode),
+        getProviderProfile(mode),
       ]);
       setStats(nextStats);
       setBookings(nextBookings);
+      setIsVet(profile?.category === 'VETERINARY');
     } catch (err) {
       setActionError(err.message || 'Unable to load dashboard.');
     } finally {
@@ -127,7 +142,7 @@ export function ProviderDashboardScreen({ navigate }) {
             <>
               <SectionTitle title="New requests" subtitle={`${pendingBookings.length} waiting`} />
               {pendingBookings.map((b) => (
-                <InboxCard key={b.id} booking={b} onAction={handleAction} compact />
+                <InboxCard key={b.id} booking={b} onAction={handleAction} navigate={navigate} isVet={isVet} compact />
               ))}
               {(stats?.pendingCount ?? 0) > 3 ? (
                 <SecondaryButton label="View all requests" icon="arrow-right" onPress={() => navigate('providerInbox')} />
@@ -141,7 +156,7 @@ export function ProviderDashboardScreen({ navigate }) {
             <>
               <SectionTitle title="Today's schedule" subtitle={`${todayBookings.length} appointment${todayBookings.length !== 1 ? 's' : ''}`} />
               {todayBookings.map((b) => (
-                <InboxCard key={b.id} booking={b} onAction={handleAction} compact />
+                <InboxCard key={b.id} booking={b} onAction={handleAction} navigate={navigate} isVet={isVet} compact />
               ))}
             </>
           ) : null}
@@ -153,7 +168,7 @@ export function ProviderDashboardScreen({ navigate }) {
 
 // ─── Inbox ─────────────────────────────────────────────────────────────────
 
-export function ProviderInboxScreen() {
+export function ProviderInboxScreen({ navigate }) {
   const { mode } = useAuth();
   const t = useT();
   const [bookings, setBookings] = useState([]);
@@ -161,14 +176,19 @@ export function ProviderInboxScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const [isVet, setIsVet] = useState(false);
 
   async function load(isRefresh = false) {
     if (isRefresh) setRefreshing(true);
     else setLoading(true);
     setError('');
     try {
-      const next = await listProviderBookings(mode);
+      const [next, profile] = await Promise.all([
+        listProviderBookings(mode),
+        getProviderProfile(mode),
+      ]);
       setBookings(next);
+      setIsVet(profile?.category === 'VETERINARY');
     } catch (err) {
       setError(err.message || 'Unable to load bookings.');
     } finally {
@@ -223,7 +243,7 @@ export function ProviderInboxScreen() {
         <EmptyState icon="calendar-blank-outline" title="Nothing here" subtitle="No bookings match this filter." />
       ) : (
         visible.map((b) => (
-          <InboxCard key={b.id} booking={b} onAction={handleAction} />
+          <InboxCard key={b.id} booking={b} onAction={handleAction} navigate={navigate} isVet={isVet} />
         ))
       )}
     </Screen>
@@ -241,6 +261,7 @@ const DEMO_SERVICES_FALLBACK = [
 export function ProviderServicesScreen() {
   const { mode } = useAuth();
   const t = useT();
+  const svcTitle = useServiceTitle();
   const [services, setServices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState('');
@@ -369,7 +390,7 @@ export function ProviderServicesScreen() {
         <GlassCard key={svc.id} style={styles.serviceCard}>
           <View style={styles.serviceTop}>
             <View style={styles.serviceCopy}>
-              <Text style={styles.serviceTitle}>{svc.title}</Text>
+              <Text style={styles.serviceTitle}>{svcTitle(svc.title)}</Text>
               <Text style={styles.serviceMeta}>{formatDuration(svc.durationMin) ?? 'Длительность не указана'}</Text>
             </View>
             <Text style={styles.servicePrice}>{svc.priceKzt ? formatMoney(svc.priceKzt) : '—'}</Text>
@@ -483,9 +504,19 @@ export function ProviderProfileScreen() {
     lastName: user?.lastName || '',
     phone: user?.phone || '',
     businessName: user?.businessName || '',
+    category: 'VETERINARY',
   });
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    getProviderProfile(mode).then((profile) => {
+      if (!active || !profile) return;
+      setForm((c) => ({ ...c, category: profile.category || 'VETERINARY' }));
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [mode]);
 
   function setField(key, value) {
     setForm((c) => ({ ...c, [key]: value }));
@@ -495,7 +526,9 @@ export function ProviderProfileScreen() {
     setError('');
     setSaved(false);
     try {
-      await saveProfile(form);
+      const { category, businessName, ...userFields } = form;
+      await saveProfile(userFields);
+      await updateProviderProfile(mode, { businessName, category });
       setSaved(true);
     } catch (err) {
       setError(err.message || 'Unable to save profile.');
@@ -528,6 +561,22 @@ export function ProviderProfileScreen() {
       <GlassCard style={styles.formPanel}>
         <SectionTitle title={t('provider_business_info')} />
         <Field label={t('provider_business_name')} value={form.businessName} onChangeText={(v) => setField('businessName', v)} placeholder="Aster Veterinary House" />
+        <SectionTitle title={t('provider_category')} />
+        <View style={styles.categoryRow}>
+          {PROVIDER_CATEGORIES.map((cat) => (
+            <Pressable
+              key={cat.value}
+              onPress={() => setField('category', cat.value)}
+              style={[
+                styles.categoryBtn,
+                { borderColor: form.category === cat.value ? p.brand : p.line, backgroundColor: form.category === cat.value ? p.brand : 'transparent' },
+              ]}
+            >
+              <MaterialCommunityIcons name={cat.icon} size={15} color={form.category === cat.value ? palette.white : p.inkSoft} />
+              <Text style={[styles.categoryBtnText, { color: form.category === cat.value ? palette.white : p.inkSoft }]}>{t(cat.labelKey)}</Text>
+            </Pressable>
+          ))}
+        </View>
         <View style={styles.formRow}>
           <View style={styles.formCell}>
             <Field label={t('auth_first_name')} value={form.firstName} onChangeText={(v) => setField('firstName', v)} placeholder="Amina" />
@@ -547,9 +596,12 @@ export function ProviderProfileScreen() {
 
 // ─── Shared components ─────────────────────────────────────────────────────
 
-function InboxCard({ booking, onAction, compact }) {
+function InboxCard({ booking, onAction, navigate, isVet, compact }) {
+  const t = useT();
+  const svcTitle = useServiceTitle();
   const [declining, setDeclining] = useState(false);
   const customerName = `${booking.customer?.firstName || ''} ${booking.customer?.lastName || ''}`.trim();
+  const showMedCard = isVet && booking.petId && ['ACCEPTED', 'IN_PROGRESS', 'COMPLETED'].includes(booking.status);
   const petLabel = booking.pet ? `${booking.pet.name} (${booking.pet.breed || booking.pet.species || 'pet'})` : null;
 
   const actionButtons = buildActionButtons(booking.status);
@@ -561,7 +613,7 @@ function InboxCard({ booking, onAction, compact }) {
           <Text style={styles.inboxCustomer}>{customerName || 'Customer'}</Text>
           {petLabel ? <Text style={styles.inboxPet}>{petLabel}</Text> : null}
           {booking.staff ? <Text style={styles.inboxMaster}>👤 {booking.staff.name}{booking.staff.role ? ` · ${booking.staff.role}` : ''}</Text> : null}
-          <Text style={styles.inboxService}>{booking.service?.title}</Text>
+          <Text style={styles.inboxService}>{svcTitle(booking.service?.title)}</Text>
           <Text style={styles.inboxTime}>{formatDateTime(booking.scheduledAt)}</Text>
           {booking.notes ? <Text style={styles.inboxNotes}>{booking.notes}</Text> : null}
         </View>
@@ -620,6 +672,16 @@ function InboxCard({ booking, onAction, compact }) {
           ))}
         </View>
       ) : null}
+
+      {showMedCard && navigate ? (
+        <Pressable
+          onPress={() => navigate('vetMedical', { bookingId: booking.id, petName: booking.pet?.name || 'Pet' })}
+          style={({ pressed }) => [styles.medCardBtn, pressed ? styles.pressed : null]}
+        >
+          <MaterialCommunityIcons name="hospital-box-outline" size={14} color={palette.success} />
+          <Text style={styles.medCardBtnText}>{t('provider_vet_medical_card')}</Text>
+        </Pressable>
+      ) : null}
     </GlassCard>
   );
 }
@@ -643,6 +705,82 @@ function buildActionButtons(status) {
     default:
       return [];
   }
+}
+
+// ─── Vet Medical Card ──────────────────────────────────────────────────────
+
+export function VetMedicalCardScreen({ route }) {
+  const { mode } = useAuth();
+  const t = useT();
+  const bookingId = route?.params?.bookingId;
+  const petName = route?.params?.petName || 'Pet';
+  const [form, setForm] = useState({
+    allergies: '', chronicDiseases: '', medications: '',
+    vaccinations: '', pastIllnesses: '', notes: '', lastVetVisit: '',
+  });
+  const [saved, setSaved] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!bookingId) { setLoading(false); return; }
+    getVetMedicalCard(mode, bookingId)
+      .then((card) => {
+        if (card) setForm({
+          allergies: card.allergies || '',
+          chronicDiseases: card.chronicDiseases || '',
+          medications: card.medications || '',
+          vaccinations: card.vaccinations || '',
+          pastIllnesses: card.pastIllnesses || '',
+          notes: card.notes || '',
+          lastVetVisit: card.lastVetVisit ? String(card.lastVetVisit).slice(0, 10) : '',
+        });
+      })
+      .catch((err) => setError(err.message || 'Unable to load medical card.'))
+      .finally(() => setLoading(false));
+  }, [mode, bookingId]);
+
+  function setField(key, value) { setForm((c) => ({ ...c, [key]: value })); }
+
+  async function handleSave() {
+    setError(''); setSaved(false);
+    try {
+      await saveVetMedicalCard(mode, bookingId, {
+        ...form,
+        lastVetVisit: form.lastVetVisit ? new Date(`${form.lastVetVisit}T09:00:00`).toISOString() : null,
+      });
+      setSaved(true);
+    } catch (err) {
+      setError(err.message || 'Unable to save medical card.');
+    }
+  }
+
+  if (!bookingId) {
+    return (
+      <Screen>
+        <EmptyState icon="hospital-box-outline" title="Medical card unavailable" subtitle="Booking ID is missing." />
+      </Screen>
+    );
+  }
+
+  return (
+    <Screen>
+      <HeroTitle eyebrow={t('provider_vet_medical_card')} title={petName} subtitle="Клиническая запись." />
+      {saved  ? <Notice tone="success" icon="check-circle-outline" body={t('medical_saved')} /> : null}
+      {error  ? <Notice tone="danger"  icon="alert-circle"         body={error} /> : null}
+      {loading ? <SkeletonCard /> : (
+        <GlassCard style={styles.formPanel}>
+          <Field label={t('medical_allergies')}    value={form.allergies}       onChangeText={(v) => setField('allergies', v)}       placeholder="Optional" multiline />
+          <Field label={t('medical_chronic')}      value={form.chronicDiseases} onChangeText={(v) => setField('chronicDiseases', v)} placeholder="Optional" multiline />
+          <Field label={t('medical_medications')}  value={form.medications}     onChangeText={(v) => setField('medications', v)}     placeholder="Optional" multiline />
+          <Field label={t('medical_vaccinations')} value={form.vaccinations}    onChangeText={(v) => setField('vaccinations', v)}    placeholder="Optional" multiline />
+          <Field label={t('medical_past_ill')}     value={form.pastIllnesses}   onChangeText={(v) => setField('pastIllnesses', v)}   placeholder="Optional" multiline />
+          <Field label={t('medical_notes')}        value={form.notes}           onChangeText={(v) => setField('notes', v)}           placeholder="Optional" multiline />
+          <PrimaryButton label={t('medical_save')} icon="content-save-outline" onPress={handleSave} />
+        </GlassCard>
+      )}
+    </Screen>
+  );
 }
 
 // ─── Analytics ─────────────────────────────────────────────────────────────
@@ -975,6 +1113,23 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: typography.body,
   },
+  medCardBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: spacing.sm,
+    marginTop: 4,
+    borderRadius: radius.md,
+    backgroundColor: palette.success + '15',
+    alignSelf: 'flex-start',
+  },
+  medCardBtnText: {
+    color: palette.success,
+    fontSize: 12,
+    fontWeight: '600',
+    fontFamily: typography.body,
+  },
   actionRow: {
     flexDirection: 'row',
     gap: spacing.sm,
@@ -1134,6 +1289,26 @@ const styles = StyleSheet.create({
   metricRow: {
     flexDirection: 'row',
     gap: spacing.sm,
+  },
+  categoryRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+    marginBottom: spacing.sm,
+  },
+  categoryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+  },
+  categoryBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    fontFamily: typography.body,
   },
   preferenceRow: {
     flexDirection: 'row',

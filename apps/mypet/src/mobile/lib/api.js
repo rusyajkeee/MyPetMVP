@@ -944,6 +944,28 @@ export async function updateProviderBookingStatus(mode, bookingId, status) {
   return liveRequest('patch', `/bookings/${bookingId}/status`, { data: { status } });
 }
 
+export async function getProviderProfile(mode) {
+  if (mode === 'demo') {
+    return { category: 'VETERINARY', businessName: 'Demo Vet', address: '', description: '' };
+  }
+  return liveRequest('get', '/providers/me');
+}
+
+export async function updateProviderProfile(mode, data) {
+  if (mode === 'demo') return null;
+  return liveRequest('post', '/providers/me', { data });
+}
+
+export async function getVetMedicalCard(mode, bookingId) {
+  if (mode === 'demo') return null;
+  return liveRequest('get', `/bookings/${bookingId}/pet-medical-card`);
+}
+
+export async function saveVetMedicalCard(mode, bookingId, data) {
+  if (mode === 'demo') return null;
+  return liveRequest('put', `/bookings/${bookingId}/pet-medical-card`, { data });
+}
+
 export async function getProviderStats(mode) {
   if (mode === 'demo') {
     const state = await readDemoState();

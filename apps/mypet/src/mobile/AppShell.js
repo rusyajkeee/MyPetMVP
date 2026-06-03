@@ -33,6 +33,7 @@ import {
   ProviderInboxScreen,
   ProviderServicesScreen,
   ProviderProfileScreen,
+  VetMedicalCardScreen,
 } from './screens/ProviderScreens';
 import { LoginScreen, RegisterScreen, WelcomeScreen } from './screens/AuthScreens';
 import { OnboardingScreen } from './screens/OnboardingScreen';
@@ -452,6 +453,7 @@ function renderRoute(route, nav, unreadCount) {
     case 'providerServices':   return <ProviderServicesScreen   navigate={nav.navigate} />;
     case 'providerAnalytics':  return <ProviderAnalyticsScreen  navigate={nav.navigate} />;
     case 'providerProfile':    return <ProviderProfileScreen    navigate={nav.navigate} />;
+    case 'vetMedical':         return <VetMedicalCardScreen     navigate={nav.navigate} route={route} />;
 
     case 'adminDashboard':    return <AdminDashboardScreen    navigate={nav.navigate} />;
     case 'adminApplications': return <AdminApplicationsScreen navigate={nav.navigate} />;

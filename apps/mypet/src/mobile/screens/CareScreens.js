@@ -5,7 +5,7 @@ import { Animated, FlatList, Modal, Pressable, RefreshControl, ScrollView, Style
 
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
-import { useLocale, useT, LOCALES } from '../context/LocaleContext';
+import { useLocale, useT, useServiceTitle, LOCALES } from '../context/LocaleContext';
 import { hapticSuccess, hapticError } from '../lib/haptics';
 import { addPet, deleteAllApiNotifications, fetchApiNotifications, fetchApiUnreadCount, getMedicalCard, getMyProviderApplication, getProfile, listBookings, listPets, markApiNotificationsRead, saveMedicalCard, submitProviderApplication, submitReview, updateBookingStatus } from '../lib/api';
 import { clearNotifications, listNotifications, markAllRead } from '../lib/notifications';
@@ -54,6 +54,7 @@ export function BookingsScreen({ navigate }) {
   const { mode } = useAuth();
   const { palette: p } = useTheme();
   const t = useT();
+  const svcTitle = useServiceTitle();
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -152,7 +153,7 @@ export function BookingsScreen({ navigate }) {
           <GlassCard key={booking.id} style={styles.bookingCard}>
             <View style={styles.bookingTopRow}>
               <View style={styles.bookingCopy}>
-                <Text style={[styles.bookingTitle, { color: p.ink }]}>{booking.service?.title || 'Booking'}</Text>
+                <Text style={[styles.bookingTitle, { color: p.ink }]}>{svcTitle(booking.service?.title) || 'Booking'}</Text>
                 <Text style={[styles.bookingMeta, { color: p.inkSoft }]}>
                   {booking.provider?.businessName ||
                     `${booking.provider?.user?.firstName || ''} ${booking.provider?.user?.lastName || ''}`.trim() ||

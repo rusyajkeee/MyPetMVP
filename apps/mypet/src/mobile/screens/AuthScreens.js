@@ -13,6 +13,13 @@ import { lightPalette, radius, spacing, typography } from '../theme';
 
 const palette = lightPalette;
 
+const PROVIDER_CATEGORIES = [
+  { value: 'VETERINARY', labelKey: 'cat_veterinary', icon: 'stethoscope' },
+  { value: 'GROOMING',   labelKey: 'cat_grooming',   icon: 'content-cut' },
+  { value: 'BOARDING',   labelKey: 'cat_boarding',   icon: 'home-heart' },
+  { value: 'TRAINING',   labelKey: 'cat_training',   icon: 'school-outline' },
+];
+
 // ─── WelcomeScreen ─────────────────────────────────────────────────────────
 
 export function WelcomeScreen({ navigate }) {
@@ -187,7 +194,7 @@ export function RegisterScreen({ navigate }) {
   const [form, setForm] = useState({
     firstName: '', lastName: '', email: '', phone: '', password: '', confirmPassword: '',
   });
-  const [providerForm, setProviderForm] = useState({ businessName: '', address: '' });
+  const [providerForm, setProviderForm] = useState({ businessName: '', address: '', category: 'VETERINARY' });
   const [tosAccepted, setTosAccepted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -217,6 +224,7 @@ export function RegisterScreen({ navigate }) {
           businessName: providerForm.businessName.trim(),
           address: providerForm.address.trim(),
           phone: form.phone.trim() || undefined,
+          category: providerForm.category,
         });
       }
     } catch (currentError) {
@@ -277,6 +285,19 @@ export function RegisterScreen({ navigate }) {
               </View>
               <Field label="Название организации" value={providerForm.businessName} onChangeText={(v) => setProviderField('businessName', v)} placeholder="Veterinary Clinic Barsa" autoCapitalize="words" />
               <Field label="Адрес" value={providerForm.address} onChangeText={(v) => setProviderField('address', v)} placeholder="ул. Кенесары 40, Астана" autoCapitalize="sentences" />
+              <View style={styles.categoryLabel}><Text style={[styles.categoryLabelText, { color: p.inkSoft }]}>Категория</Text></View>
+              <View style={styles.categoryRow}>
+                {PROVIDER_CATEGORIES.map((cat) => (
+                  <Pressable
+                    key={cat.value}
+                    onPress={() => { hapticSelection(); setProviderField('category', cat.value); }}
+                    style={[styles.categoryBtn, { borderColor: providerForm.category === cat.value ? p.brand : p.line, backgroundColor: providerForm.category === cat.value ? p.brand : 'transparent' }]}
+                  >
+                    <MaterialCommunityIcons name={cat.icon} size={15} color={providerForm.category === cat.value ? palette.white : p.inkSoft} />
+                    <Text style={[styles.categoryBtnText, { color: providerForm.category === cat.value ? palette.white : p.inkSoft }]}>{t(cat.labelKey)}</Text>
+                  </Pressable>
+                ))}
+              </View>
               <Notice tone="info" icon="information-outline" body="Заявка будет отправлена администратору. После одобрения вы получите доступ к аккаунту провайдера." />
             </>
           ) : null}
@@ -468,6 +489,34 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+    fontFamily: typography.body,
+  },
+  categoryLabel: {
+    marginTop: spacing.xs,
+  },
+  categoryLabelText: {
+    fontSize: 12,
+    fontWeight: '600',
+    fontFamily: typography.body,
+    marginBottom: 6,
+  },
+  categoryRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+  },
+  categoryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+  },
+  categoryBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
     fontFamily: typography.body,
   },
 });

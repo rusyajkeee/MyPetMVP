@@ -5,11 +5,14 @@ import { authMiddleware, attachUser } from '../middleware/auth.js';
 
 const router = Router();
 
+const providerCategoryEnum = z.enum(['VETERINARY', 'GROOMING', 'BOARDING', 'TRAINING']);
+
 const applySchema = z.object({
   businessName: z.string().min(2, 'Название организации обязательно'),
   address: z.string().min(3, 'Адрес обязателен'),
   phone: z.string().optional(),
   description: z.string().optional(),
+  category: providerCategoryEnum.optional().default('VETERINARY'),
 });
 
 // GET /provider-applications/my — current user checks their own application status

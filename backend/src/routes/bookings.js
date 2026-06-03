@@ -249,4 +249,58 @@ router.patch('/:id/status', authMiddleware, attachUser, async (req, res, next) =
   }
 });
 
+const vetMedicalCardSchema = z.object({
+  allergies:       z.string().optional().nullable(),
+  chronicDiseases: z.string().optional().nullable(),
+  medications:     z.string().optional().nullable(),
+  vaccinations:    z.string().optional().nullable(),
+  pastIllnesses:   z.string().optional().nullable(),
+  notes:           z.string().optional().nullable(),
+  lastVetVisit:    z.string().datetime({ offset: true }).optional().nullable(),
+});
+
+const VET_STATUSES = ['ACCEPTED', 'IN_PROGRESS', 'COMPLETED'];
+
+async function assertVetBooking(req, res) {
+  const provider = await prisma.provider.findUnique({ where: { userId: req.userId } });
+  if (!provider) { res.status(403).json({ error: 'Provider profile not found' }); return null; }
+  if (provider.category !== 'VETERINARY') {
+    res.status(403).json({ error: 'Only veterinary providers can access pet medical cards.' }); return null;
+  }
+  const booking = await prisma.booking.findUnique({ where: { id: req.params.id } });
+  if (!booking) { res.status(404).json({ error: 'Booking not found' }); return null; }
+  if (booking.providerId !== provider.id) { res.status(403).json({ error: 'Not your booking' }); return null; }
+  if (!VET_STATUSES.includes(booking.status)) {
+    res.status(403).json({ error: 'Medical card accessible only during/after accepted appointment' }); return null;
+  }
+  if (!booking.petId) { res.status(404).json({ error: 'No pet linked to this booking' }); return null; }
+  return { provider, booking };
+}
+
+router.get('/:id/pet-medical-card', authMiddleware, attachUser, requireRole('PROVIDER', 'ADMIN'), async (req, res, next) => {
+  try {
+    const ctx = await assertVetBooking(req, res);
+    if (!ctx) return;
+    const card = await prisma.petMedicalCard.findUnique({ where: { petId: ctx.booking.petId } });
+    res.json(card || null);
+  } catch (e) { next(e); }
+});
+
+router.put('/:id/pet-medical-card', authMiddleware, attachUser, requireRole('PROVIDER', 'ADMIN'), async (req, res, next) => {
+  try {
+    const ctx = await assertVetBooking(req, res);
+    if (!ctx) return;
+    const data = vetMedicalCardSchema.parse(req.body);
+    const card = await prisma.petMedicalCard.upsert({
+      where: { petId: ctx.booking.petId },
+      create: { petId: ctx.booking.petId, ...data, lastVetVisit: data.lastVetVisit ? new Date(data.lastVetVisit) : null },
+      update: { ...data, lastVetVisit: data.lastVetVisit ? new Date(data.lastVetVisit) : null },
+    });
+    res.json(card);
+  } catch (e) {
+    if (e.name === 'ZodError') return res.status(400).json({ error: e.errors?.[0]?.message });
+    next(e);
+  }
+});
+
 export default router;

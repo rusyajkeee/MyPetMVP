@@ -7,7 +7,7 @@ import ProvidersMap from '../components/ProvidersMap';
 
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
-import { useT } from '../context/LocaleContext';
+import { useT, useServiceTitle } from '../context/LocaleContext';
 import {
   createBooking,
   getCategories,
@@ -65,6 +65,7 @@ export function HomeScreen({ navigate, unreadCount = 0 }) {
   const { mode, user } = useAuth();
   const { palette: p, dark } = useTheme();
   const t = useT();
+  const svcTitle = useServiceTitle();
   const [providers, setProviders] = useState([]);
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -117,7 +118,7 @@ export function HomeScreen({ navigate, unreadCount = 0 }) {
         <GlassCard style={styles.bookingBanner}>
           <View style={styles.bookingBannerRow}>
             <View style={styles.bookingBannerCopy}>
-              <Text style={[styles.bookingBannerTitle, { color: p.ink }]}>{nextBooking.service?.title}</Text>
+              <Text style={[styles.bookingBannerTitle, { color: p.ink }]}>{svcTitle(nextBooking.service?.title)}</Text>
               <Text style={[styles.bookingBannerMeta, { color: p.inkSoft }]}>{formatDateTime(nextBooking.scheduledAt)}</Text>
             </View>
             <StatusBadge label={relativeLabel(nextBooking.status)} tone={bookingStatuses[nextBooking.status]} />
@@ -713,6 +714,7 @@ export function ProviderScreen({ navigate, route }) {
   const { mode } = useAuth();
   const { palette: p } = useTheme();
   const t = useT();
+  const svcTitle = useServiceTitle();
   const providerId = route?.params?.providerId;
   const [provider, setProvider] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -796,7 +798,7 @@ export function ProviderScreen({ navigate, route }) {
       {provider.services?.map((service) => (
         <GlassCard key={service.id} style={styles.serviceRow}>
           <View style={styles.serviceCopy}>
-            <Text style={[styles.serviceTitle, { color: p.ink }]}>{service.title}</Text>
+            <Text style={[styles.serviceTitle, { color: p.ink }]}>{svcTitle(service.title)}</Text>
             <Text style={[styles.serviceMeta, { color: p.inkSoft }]}>
               {service.durationMin ? formatDuration(service.durationMin) : t('provider_open')}
             </Text>
@@ -835,6 +837,7 @@ export function BookingScreen({ navigate, route }) {
   const { mode } = useAuth();
   const { palette: p } = useTheme();
   const t = useT();
+  const svcTitle = useServiceTitle();
   const providerId = route?.params?.providerId;
   const [provider, setProvider] = useState(null);
   const [pets, setPets] = useState([]);
@@ -1029,7 +1032,7 @@ export function BookingScreen({ navigate, route }) {
               ]}
             >
               <View style={styles.optionCopy}>
-                <Text style={[styles.optionTitle, { color: p.ink }]}>{service.title}</Text>
+                <Text style={[styles.optionTitle, { color: p.ink }]}>{svcTitle(service.title)}</Text>
                 <Text style={[styles.optionMeta, { color: p.inkSoft }]}>
                   {formatMoney(service.priceKzt)}{service.durationMin ? ` · ${formatDuration(service.durationMin)}` : ''}
                 </Text>
@@ -1189,7 +1192,7 @@ function ProviderListItem({ provider, onPress }) {
         <View style={styles.providerCopy}>
           <Text style={[styles.providerName, { color: p.ink }]}>{title}</Text>
           <Text style={[styles.providerMeta, { color: p.inkSoft }]}>
-            {service?.title || provider.address || t('provider_nearby')}
+            {svcTitle(service?.title) || provider.address || t('provider_nearby')}
           </Text>
         </View>
       </View>
