@@ -1216,6 +1216,7 @@ function SummaryRow({ icon, label, value }) {
 function ProviderListItem({ provider, onPress }) {
   const { palette: p } = useTheme();
   const t = useT();
+  const svcTitle = useServiceTitle();
   const service = provider.services?.[0];
   const title = provider.businessName || `${provider.user?.firstName} ${provider.user?.lastName}`;
 
