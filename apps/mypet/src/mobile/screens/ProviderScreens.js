@@ -569,11 +569,11 @@ export function ProviderProfileScreen() {
               onPress={() => setField('category', cat.value)}
               style={[
                 styles.categoryBtn,
-                { borderColor: form.category === cat.value ? p.brand : p.line, backgroundColor: form.category === cat.value ? p.brand : 'transparent' },
+                form.category === cat.value ? styles.categoryBtnActive : { borderColor: p.line },
               ]}
             >
-              <MaterialCommunityIcons name={cat.icon} size={15} color={form.category === cat.value ? palette.white : p.inkSoft} />
-              <Text style={[styles.categoryBtnText, { color: form.category === cat.value ? palette.white : p.inkSoft }]}>{t(cat.labelKey)}</Text>
+              <MaterialCommunityIcons name={cat.icon} size={15} color={form.category === cat.value ? '#fff' : p.inkSoft} />
+              <Text style={[styles.categoryBtnText, { color: form.category === cat.value ? '#fff' : p.inkSoft }]}>{t(cat.labelKey)}</Text>
             </Pressable>
           ))}
         </View>
@@ -1304,6 +1304,11 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: radius.pill,
     borderWidth: 1,
+    backgroundColor: 'transparent',
+  },
+  categoryBtnActive: {
+    backgroundColor: '#111',
+    borderColor: '#111',
   },
   categoryBtnText: {
     fontSize: 13,

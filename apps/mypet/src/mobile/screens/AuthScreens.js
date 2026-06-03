@@ -249,18 +249,18 @@ export function RegisterScreen({ navigate }) {
 
           <View style={styles.roleToggleRow}>
             <Pressable
-              style={[styles.roleToggleBtn, !isProvider && { backgroundColor: p.brand, borderColor: p.brand }]}
+              style={[styles.roleToggleBtn, !isProvider && styles.roleToggleBtnActive]}
               onPress={() => setIsProvider(false)}
             >
-              <MaterialCommunityIcons name="paw" size={16} color={!isProvider ? palette.white : p.inkSoft} />
-              <Text style={[styles.roleToggleText, { color: !isProvider ? palette.white : p.inkSoft }]}>Клиент</Text>
+              <MaterialCommunityIcons name="paw" size={16} color={!isProvider ? '#fff' : p.inkSoft} />
+              <Text style={[styles.roleToggleText, { color: !isProvider ? '#fff' : p.inkSoft }]}>Клиент</Text>
             </Pressable>
             <Pressable
-              style={[styles.roleToggleBtn, isProvider && { backgroundColor: p.brand, borderColor: p.brand }]}
+              style={[styles.roleToggleBtn, isProvider && styles.roleToggleBtnActive]}
               onPress={() => setIsProvider(true)}
             >
-              <MaterialCommunityIcons name="store-outline" size={16} color={isProvider ? palette.white : p.inkSoft} />
-              <Text style={[styles.roleToggleText, { color: isProvider ? palette.white : p.inkSoft }]}>Провайдер</Text>
+              <MaterialCommunityIcons name="store-outline" size={16} color={isProvider ? '#fff' : p.inkSoft} />
+              <Text style={[styles.roleToggleText, { color: isProvider ? '#fff' : p.inkSoft }]}>Провайдер</Text>
             </Pressable>
           </View>
 
@@ -291,10 +291,10 @@ export function RegisterScreen({ navigate }) {
                   <Pressable
                     key={cat.value}
                     onPress={() => { hapticSelection(); setProviderField('category', cat.value); }}
-                    style={[styles.categoryBtn, { borderColor: providerForm.category === cat.value ? p.brand : p.line, backgroundColor: providerForm.category === cat.value ? p.brand : 'transparent' }]}
+                    style={[styles.categoryBtn, providerForm.category === cat.value ? styles.categoryBtnActive : { borderColor: p.line }]}
                   >
-                    <MaterialCommunityIcons name={cat.icon} size={15} color={providerForm.category === cat.value ? palette.white : p.inkSoft} />
-                    <Text style={[styles.categoryBtnText, { color: providerForm.category === cat.value ? palette.white : p.inkSoft }]}>{t(cat.labelKey)}</Text>
+                    <MaterialCommunityIcons name={cat.icon} size={15} color={providerForm.category === cat.value ? '#fff' : p.inkSoft} />
+                    <Text style={[styles.categoryBtnText, { color: providerForm.category === cat.value ? '#fff' : p.inkSoft }]}>{t(cat.labelKey)}</Text>
                   </Pressable>
                 ))}
               </View>
@@ -474,6 +474,10 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: palette.inkSoft + '40',
   },
+  roleToggleBtnActive: {
+    backgroundColor: '#111',
+    borderColor: '#111',
+  },
   roleToggleText: {
     fontSize: 14,
     fontWeight: '700',
@@ -513,6 +517,11 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: radius.pill,
     borderWidth: 1,
+    backgroundColor: 'transparent',
+  },
+  categoryBtnActive: {
+    backgroundColor: '#111',
+    borderColor: '#111',
   },
   categoryBtnText: {
     fontSize: 13,
